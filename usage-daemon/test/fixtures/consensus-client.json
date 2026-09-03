@@ -1,0 +1,24 @@
+{
+  "response": {
+    "object": "client",
+    "id": "client_test",
+    "sessions": [
+      {
+        "object": "session",
+        "id": "sess_test",
+        "status": "active",
+        "user": {
+          "id": "user_test",
+          "object": "user",
+          "public_metadata": {
+            "last_reset_date": "2026-08-22T22:09:19.529Z",
+            "used_pro_search_queries": ["q1", "q2"],
+            "used_deep_search_queries": ["q1"],
+            "used_consensus_snapshot_queries": []
+          }
+        }
+      }
+    ]
+  },
+  "client": null
+}

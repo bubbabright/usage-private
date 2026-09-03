@@ -1,0 +1,8 @@
+{
+  "limit_requests": 14400,
+  "remaining_requests": 14350,
+  "reset_requests_at": "2026-07-27T13:00:00.000Z",
+  "limit_tokens": 6000,
+  "remaining_tokens": 4500,
+  "reset_tokens_at": "2026-07-27T12:00:59.560Z"
+}

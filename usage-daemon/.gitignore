@@ -1,0 +1,5 @@
+local/
+node_modules/
+.config/
+.claude/settings.local.json
+.claude/launch.json

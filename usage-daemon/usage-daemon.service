@@ -1,0 +1,24 @@
+[Unit]
+Description=usage-daemon (multi-provider usage poller + HTTP hub on :8787)
+# Repo: /mnt/nas/projects/usage/usage-daemon
+After=network-online.target
+Wants=network-online.target
+# Crash-loop guard (these are [Unit] directives, not [Service]).
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+# Config (config.toml) and credential files (.config/usage-daemon/*.cookie) are
+# resolved relative to the working directory today — it MUST be the repo root,
+# not the stale usage-daemon-modern/ nested copy the old /etc unit pointed at.
+WorkingDirectory=/mnt/nas/projects/usage/usage-daemon
+ExecStart=/home/daniel/.nvm/versions/node/v24.16.0/bin/node src/index.js
+# Self-heal: restart on crash AND on clean exit, capped so a crash-loop backs off.
+Restart=always
+RestartSec=5
+
+[Install]
+# Installed as a --user unit; default.target = the user session's graphical/login
+# target. Boot-time start without an active login needs: loginctl enable-linger daniel
+WantedBy=default.target

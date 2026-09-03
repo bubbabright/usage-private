@@ -1,0 +1,10 @@
+{
+  "usages": [
+    {"productID": "trial-command-a-03-2025-default-chat-token-in", "productName": "Trial chat input token on default Command A model", "productUnit": "Input tokens", "quantity": 36, "time": "2026-08-22T00:00:00Z", "total": 0},
+    {"productID": "trial-command-a-03-2025-default-chat-token-out", "productName": "Trial chat output token on default Command A model", "productUnit": "Output tokens", "quantity": 9, "time": "2026-08-22T00:00:00Z", "total": 0},
+    {"productID": "trial-command-a-plus-05-2026-default-chat-token-in", "productName": "Trial Chat API input token on Command A Plus 05-2026 model", "productUnit": "Input tokens", "quantity": 4692, "time": "2026-08-22T00:00:00Z", "total": 0},
+    {"productID": "trial-command-a-plus-05-2026-default-chat-token-out", "productName": "Trial Chat API output token on Command A Plus 05-2026 model", "productUnit": "Output tokens", "quantity": 12189, "time": "2026-08-22T00:00:00Z", "total": 0},
+    {"productID": "trial-command-r-08-2024-default-chat-token-in", "productName": "Trial chat input token on default command-r 08-2024 model", "productUnit": "Input tokens", "quantity": 36, "time": "2026-08-22T00:00:00Z", "total": 0},
+    {"productID": "trial-command-r-08-2024-default-chat-token-out", "productName": "Trial chat output token on default command-r 08-2024 model", "productUnit": "Output tokens", "quantity": 11, "time": "2026-08-22T00:00:00Z", "total": 0}
+  ]
+}

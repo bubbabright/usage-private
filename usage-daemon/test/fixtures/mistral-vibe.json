@@ -1,0 +1,26 @@
+{
+  "result": {
+    "data": {
+      "json": {
+        "vibe_budget": {
+          "usage_percentage": 0,
+          "initial_budget": 10,
+          "currency": "USD",
+          "reset_at": "2026-09-01T00:00:00Z",
+          "payg_enabled": false
+        },
+        "api_budget": {
+          "usage_percentage": 0,
+          "initial_budget": 10,
+          "currency": "USD",
+          "reset_at": "2026-09-01T00:00:00Z",
+          "payg_enabled": false
+        },
+        "usage_percentage": 0,
+        "initial_budget": 10,
+        "currency": "USD",
+        "reset_at": "2026-09-01T00:00:00Z"
+      }
+    }
+  }
+}

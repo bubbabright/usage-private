@@ -1,0 +1,180 @@
+port = 8787
+
+[providers.ollama]
+enabled = true
+interval_seconds = 300
+# persists whatever cookie you paste in Settings -> survives daemon restarts
+cookie_file = "~/.config/usage-daemon/ollama.cookie"
+# Enables the "Refresh from Firefox" button for this provider (on request only —
+# the daemon never reads the browser profile on a timer). When the session
+# expires: log in to the site in Firefox, then press the button.
+cookie_from_firefox = "ollama.com"
+
+[providers.claude]
+enabled = true
+interval_seconds = 300
+
+[providers.grok]
+enabled = true
+interval_seconds = 300
+
+[providers.mistral]
+enabled = true
+interval_seconds = 300
+cookie_file = "~/.config/usage-daemon/mistral.cookie"
+# One domain covers console./admin./chat. — the plugin calls two of those hosts
+# and the working pasted cookie was always a merge across all of them.
+cookie_from_firefox = "mistral.ai"
+
+[providers.opencode-go]
+enabled = true
+interval_seconds = 300
+cookie_file = "~/.config/usage-daemon/opencode-go.cookie"
+cookie_from_firefox = "opencode.ai"
+# discoverWorkspaceId() hits a bare /workspace route that 404s (not a real
+# route on opencode.ai) -- pin the id directly to skip discovery entirely.
+workspace_id = "wrk_01KX9539EQF6MYWDM1SMYBPS1E"
+
+[providers.cloudflare]
+enabled = true
+interval_seconds = 300
+account_id = "f35176e8f58cb23aafb0acf2c246e2fe"
+# ABSOLUTE path (not ~/, which config.js resolves against the daemon dir).
+# Holds a scoped Cloudflare API token (dash.cloudflare.com -> My Profile ->
+# API Tokens -> Create Token, permission "Account Analytics: Read"). Does NOT
+# expire, unlike the old wrangler OAuth token. Paste a new one via webui
+# Settings -> Cloudflare -> API key; the daemon writes it back here so it
+# survives restarts.
+api_token_file = "/home/daniel/.config/usage-daemon/cloudflare.token"
+
+[providers.openrouter]
+enabled = true
+interval_seconds = 300
+# Key from openrouter.ai/settings/keys — paste it in the web UI Settings gear;
+# the daemon writes it here so it survives restarts. Reports auth_expired until
+# then. Absolute path — no ~/ (config.js resolves it against cwd).
+api_key_file = "/home/daniel/.config/usage-daemon/openrouter.key"
+
+[providers.deepgram]
+enabled = true
+interval_seconds = 300
+# Key with usage:read scope (console.deepgram.com) — paste it in the web UI
+# Settings gear; the daemon writes it here so it survives restarts. Reports
+# auth_expired until then.
+api_key_file = "/home/daniel/.config/usage-daemon/deepgram.key"
+# Optional starting-credit so balance shows as a %: balance_cap = 200
+
+[providers.groq]
+enabled = true
+interval_seconds = 900
+# Groq has no public spend API -- this reads x-ratelimit-* headers off a real
+# (1-token) chat completion, so each poll costs a real RPD/TPM tick. Key from
+# console.groq.com/keys. Absolute path -- no ~/ (config.js resolves against cwd).
+api_key_file = "/home/daniel/.config/usage-daemon/groq.key"
+# Optional: override the probe model (default openai/gpt-oss-20b)
+# model = "openai/gpt-oss-20b"
+
+[providers.firecrawl]
+enabled = true
+interval_seconds = 300
+# Firecrawl monthly credits w/ rollover. Reads /v2/team/credit-usage; the bar
+# tracks the current 1000-credit slice (sawtooths per plan spent), resets_at
+# surfaces only on the last slice. Key from firecrawl.dev/app/api-keys.
+# Absolute path -- no ~/ (config.js resolves against cwd).
+api_key_file = "/home/daniel/.config/usage-daemon/firecrawl.key"
+
+[providers.serpapi]
+enabled = true
+interval_seconds = 300
+# SerpApi monthly plan meter from the free Account API
+# (GET serpapi.com/account.json) — searches_per_month cap vs this_month_usage,
+# resetting at plan_renewal_date. Account API calls never count toward the
+# monthly quota, so polling is free. Auth is the `api_key` query param, not a
+# Bearer header. Key pasted via the web UI Settings gear persists here.
+# Absolute path -- no ~/ (config.js resolves against cwd).
+api_key_file = "/home/daniel/.config/usage-daemon/serpapi.key"
+
+[providers.llm7]
+enabled = true
+interval_seconds = 300
+# LLM7 token quota: Bearer JWT from the dashboard SPA session.
+# Paste the JWT via the web UI Settings gear; the daemon writes it here so it
+# survives restarts. Reports auth_expired until then.
+# Absolute path -- no ~/ (config.js resolves against cwd).
+api_token_file = "/home/daniel/.config/usage-daemon/llm7.token"
+
+[providers.abacus]
+enabled = true
+interval_seconds = 300
+# Abacus.AI ChatLLM compute point usage: POST to apps.abacus.ai/api/v1/_getCompleteUserInfo.
+# Auth is the browser session cookie. Paste the cookie via the web UI Settings gear;
+# the daemon persists it here so it survives restarts. Reports auth_expired until then.
+# Get the cookie from browser DevTools -> Application -> Cookies -> apps.abacus.ai.
+cookie_file = "/home/daniel/.config/usage-daemon/abacus.cookie"
+cookie_from_firefox = "abacus.ai"
+
+[providers.hyper]
+enabled = true
+interval_seconds = 300
+# Charm Hyper credits: GET /v1/credits with Bearer API key.
+# Create an API key at hyper.charm.land/teams/<id>/api-keys. Paste the key
+# (sk-hyper-...) via the web UI Settings gear; the daemon writes it here.
+api_token_file = "/home/daniel/.config/usage-daemon/hyper.token"
+# Optional: browser cookie for the billing page scrape (parses "Next
+# Hypercredit Refresh in N weeks" for resets_at). Falls back to null.
+cookie_file = "/home/daniel/.config/usage-daemon/hyper.cookie"
+cookie_from_firefox = "hyper.charm.land"
+
+[providers.tavily]
+enabled = true
+interval_seconds = 300
+# Tavily monthly search credits from app.tavily.com/api/account
+cookie_file = "~/.config/usage-daemon/tavily.cookie"
+cookie_from_firefox = "app.tavily.com"
+
+[providers.context7]
+enabled = true
+interval_seconds = 300
+# Context7 monthly request quota from context7.com/api/dashboard/stats/<team_id>
+team_id = "4695ef49-78a3-4f24-94e6-8fc39e69056f"
+cookie_file = "~/.config/usage-daemon/context7.cookie"
+cookie_from_firefox = "context7.com"
+
+[providers.consensus]
+enabled = true
+interval_seconds = 300
+# Consensus monthly query counters from clerk.consensus.app/v1/client
+cookie_file = "~/.config/usage-daemon/consensus.cookie"
+cookie_from_firefox = "consensus.app"
+
+[providers.cohere]
+enabled = true
+interval_seconds = 900
+# Cohere token usage (informational, no cap) from dashboard's internal RPC.
+# Dashboard session JWT, not the API key — expires ~5d, no auto-refresh
+# (lives in browser storage, not a cookie). Re-paste when it goes auth_expired.
+org_id = "ac29bf87-b6a5-4fd7-9989-01ca7ab02960"
+api_token_file = "~/.config/usage-daemon/cohere.token"
+
+[providers.elevenlabs]
+enabled = true
+interval_seconds = 300
+# ElevenLabs character quota. Paste key via webui Settings.
+api_key_file = "~/.config/usage-daemon/elevenlabs.key"
+
+[providers.runpod]
+enabled = true
+interval_seconds = 300
+# RunPod pay-as-you-go balance. Paste key via webui Settings.
+api_key_file = "~/.config/usage-daemon/runpod.key"
+
+[providers.github]
+enabled = true
+interval_seconds = 300
+# GitHub API rate-limit status. Paste fine-grained PAT via webui Settings.
+api_key_file = "~/.config/usage-daemon/github.token"
+
+# HTTP control surface (restart/stop from the web UI). Enabled on this
+# LAN/Tailscale-trusted host. restart/stop run under systemd.
+[control]
+allow_control = true

@@ -1,0 +1,83 @@
+{
+  "data": {
+    "viewer": {
+      "accounts": [
+        {
+          "aiInferenceAdaptiveGroups": [
+            {
+              "count": 896,
+              "dimensions": {
+                "date": "2026-07-18",
+                "modelId": "@cf/meta/llama-3.3-70b-instruct-fp8-fast"
+              },
+              "sum": {
+                "totalNeurons": 2288.003695011139
+              }
+            },
+            {
+              "count": 896,
+              "dimensions": {
+                "date": "2026-07-18",
+                "modelId": "@cf/mistralai/mistral-small-3.1-24b-instruct"
+              },
+              "sum": {
+                "totalNeurons": 704.721527338028
+              }
+            },
+            {
+              "count": 896,
+              "dimensions": {
+                "date": "2026-07-18",
+                "modelId": "@cf/baai/bge-small-en-v1.5"
+              },
+              "sum": {
+                "totalNeurons": 0
+              }
+            },
+            {
+              "count": 1442,
+              "dimensions": {
+                "date": "2026-07-18",
+                "modelId": "@cf/baai/bge-base-en-v1.5"
+              },
+              "sum": {
+                "totalNeurons": 1076.2844850000001
+              }
+            },
+            {
+              "count": 896,
+              "dimensions": {
+                "date": "2026-07-18",
+                "modelId": "@cf/meta/llama-3.1-8b-instruct-fp8-fast"
+              },
+              "sum": {
+                "totalNeurons": 391.89189887046814
+              }
+            },
+            {
+              "count": 896,
+              "dimensions": {
+                "date": "2026-07-18",
+                "modelId": "@cf/meta/llama-3.2-1b-instruct"
+              },
+              "sum": {
+                "totalNeurons": 168.59949942678213
+              }
+            },
+            {
+              "count": 896,
+              "dimensions": {
+                "date": "2026-07-18",
+                "modelId": "@cf/meta/llama-3.2-3b-instruct"
+              },
+              "sum": {
+                "totalNeurons": 354.18219578266144
+              }
+            }
+          ]
+        }
+      ]
+    }
+  },
+  "errors": null
+}
