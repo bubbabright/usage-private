@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+.pytest_cache/
+.ruff_cache/
+
+# Local daemon state (never commit secrets/history)
+secrets.sqlite*
+*.sqlite
+*.cookie
+*.token
+daemon.log*
+
+# OS
+.DS_Store

@@ -1,0 +1,23 @@
+{
+  "success": true,
+  "data": {
+    "dailyStats": [
+      {
+        "date": "2026-08-22",
+        "search_requests": 1,
+        "fetch_docs_requests": 2,
+        "parse_tokens": 0,
+        "member_count": 1,
+        "parse_tokens_cost": 0,
+        "member_cost": 0.33,
+        "api_usage_cost": 0
+      }
+    ],
+    "quotaLimit": 1000,
+    "ownerPlan": "free",
+    "userRequests": 3,
+    "customMemberPrice": null,
+    "creditBalance": 0,
+    "personalMembershipWaived": false
+  }
+}

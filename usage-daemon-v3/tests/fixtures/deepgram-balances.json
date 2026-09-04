@@ -1,0 +1,16 @@
+{
+  "balances": [
+    {
+      "balance_id": "b7f3c9d2-4a1e-4f8b-9c3d-2e5a7f8b9c1d",
+      "amount": 12.50,
+      "units": "USD",
+      "purchase_order_id": "PO-REDACTED-1"
+    },
+    {
+      "balance_id": "c8a4d0e3-5b2f-4a9c-8d4e-3f6b8c9d0e2f",
+      "amount": 0.25,
+      "units": "USD",
+      "purchase_order_id": "PO-REDACTED-2"
+    }
+  ]
+}

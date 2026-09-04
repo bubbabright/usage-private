@@ -1,0 +1,16 @@
+{
+  "data": {
+    "label": "sk-or-v1-REDACTED",
+    "limit": 100.0,
+    "limit_reset": null,
+    "limit_remaining": 41.2,
+    "include_byok_in_limit": false,
+    "usage": 58.8,
+    "usage_daily": 3.1,
+    "usage_weekly": 12.4,
+    "usage_monthly": 40.0,
+    "byok_usage": 0,
+    "is_free_tier": false,
+    "rate_limit": { "requests": 1000, "interval": "10s" }
+  }
+}

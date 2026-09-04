@@ -1,0 +1,3 @@
+# uv settings for this project (NAS mount: cache and venv live on different
+# filesystems, so hardlinking is unavailable — copy instead of warning/failing).
+link-mode = "copy"
