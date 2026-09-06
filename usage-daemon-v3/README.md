@@ -6,8 +6,11 @@ over HTTP. Zero Node/JS survives after cutover.
 Authoritative design: **[`PLAN-python-rewrite.md`](PLAN-python-rewrite.md)** —
 read it first. §9 describes the exact handoff sources for implementation.
 
-## Status
-- Milestone 1: project scaffold in progress (this tree).
+## Status (2026-09-06 — full snapshot in [STATUS.md](STATUS.md))
+- Milestone **2 of 5**: 8/21 providers ported (ollama, claude, hyper, cohere,
+  abacus, llm7, github, runpod); **162 tests green**; `usage` CLI shipped.
+- Next: port the 13 remaining providers (fixtures already vendored), implement
+  `usage_urls.py`, parity re-run (M3), cutover (M4), JS deletion (M5).
 - Reference ground truth (kept read-only as the spec):
   - JS sources + fixtures in `../usage-daemon/src/**` and `../usage-daemon/test/fixtures/`
   - this tree's `tests/fixtures/` (vendored copy of the JS fixtures)
@@ -16,13 +19,15 @@ read it first. §9 describes the exact handoff sources for implementation.
 ```
 usage_daemon/       package (core modules + providers/)
 tests/              pytest + fixtures
-scripts/            deploy/parity helpers
+scripts/            deploy/parity helpers (not yet created)
 pyproject.toml      python >=3.11, dep: httpx
+STATUS.md           session-continuity: progress, porting loop, gotchas
 ```
 
-## Run (scaffold)
+## Run
 ```sh
-python -m usage_daemon --help
+uv run usage-daemon-v3 --port 8788   # side-by-side while the JS daemon owns 8787
+uv run usage-daemon-v3 --help
 ```
 
 ## CLI — `usage`

@@ -1,7 +1,9 @@
 # PLAN — Rewrite `usage-daemon` in Python (zero Node/JS remains)
 
 Status: **LOCKED** (data models, storage, framework, rollout all approved).
-Working doc: `/mnt/nas/projects/usage/usage-daemon/PLAN-python-rewrite.md`
+This copy (`usage-daemon-v3/PLAN-python-rewrite.md`) is the **authoritative,
+committed version**; the untracked duplicate in the JS tree
+(`/mnt/nas/projects/usage/usage-daemon/PLAN-python-rewrite.md`) predates it.
 
 ## 0. Mandate
 

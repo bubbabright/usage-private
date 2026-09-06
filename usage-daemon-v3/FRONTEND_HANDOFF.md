@@ -1,9 +1,14 @@
 # Frontend Agent Handoff — usage-daemon-v3 backend API
 
-> **Status: READY.** The backend (usage-daemon-v3) is complete and verified: 111
-> tests green via `uv run pytest` (~9s), boot → poll → SIGTERM verified live, and
-> wire-contract parity with the JS daemon confirmed shape-for-shape (differential
-> check against the live JS instance, below).
+> **Status: READY (backend core).** 162 tests green via `uv run pytest` (~12s),
+> boot → poll → SIGTERM verified live, and wire-contract parity with the JS daemon
+> confirmed shape-for-shape (differential check against the live JS instance,
+> below — performed at the 111-test mark, before four more providers landed;
+> a fresh parity re-run is planned for milestone 3, see `STATUS.md`).
+>
+> Provider coverage note: v3 currently runs **8/21 providers** (ollama, claude,
+> hyper, cohere, abacus, llm7, github, runpod). Until cutover, the JS daemon on
+> 8787 still serves all 21 — develop against it; the shapes below are identical.
 
 ## What runs where
 
@@ -130,8 +135,12 @@ Contract guards live in `tests/test_http.py` — if a route shape drifts, CI cat
 ## Known gaps (explicitly out of scope for the frontend)
 
 - `GET /` returns 501 (dashboard/report not ported — that's this handoff).
-- Not ported from JS: opencode/chutes/grok/firecrawl/deepgram providers, docs, install.sh, dashboard.js/report.js.
+- Not yet ported from JS (13): mistral, grok, opencode-go, openrouter,
+  cloudflare, deepgram, groq, firecrawl, serpapi, tavily, context7, consensus,
+  elevenlabs. Ported: ollama, claude, hyper, cohere, abacus, llm7, github, runpod.
+- `usage_urls.py` (state-backed usage-URL overrides) is a stub.
 - No CORS headers on v3 yet — frontend must be served same-origin (or we add CORS when needed).
+- Docs, install.sh, dashboard.js/report.js — cutover chores, see `STATUS.md`.
 
 ## How to verify a frontend change
 
