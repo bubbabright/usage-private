@@ -28,15 +28,23 @@ LISTEN_RETRIES = 12  # ~6s of grace for the outgoing process to exit
 
 
 def _register_compiled_in() -> None:
+    from .providers.abacus import create as create_abacus
     from .providers.claude import create_provider as create_claude
     from .providers.cohere import create_provider as create_cohere
+    from .providers.github import create as create_github
     from .providers.hyper import create_provider as create_hyper
+    from .providers.llm7 import create as create_llm7
     from .providers.ollama import create_provider as create_ollama
+    from .providers.runpod import create as create_runpod
 
     registry.register("ollama", create_ollama)
     registry.register("claude", create_claude)
     registry.register("hyper", create_hyper)
     registry.register("cohere", create_cohere)
+    registry.register("abacus", create_abacus)
+    registry.register("llm7", create_llm7)
+    registry.register("github", create_github)
+    registry.register("runpod", create_runpod)
 
 
 def _build_runner(cfg: dict) -> Runner:
