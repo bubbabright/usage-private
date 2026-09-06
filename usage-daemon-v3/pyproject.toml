@@ -13,6 +13,7 @@ dependencies = ["httpx>=0.27"]
 
 [project.scripts]
 usage-daemon-v3 = "usage_daemon.__main__:main"
+usage = "usage_daemon.cli:main"
 
 [tool.setuptools.packages.find]
 include = ["usage_daemon*"]
