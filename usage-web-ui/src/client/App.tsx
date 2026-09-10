@@ -392,7 +392,7 @@ function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list'
                 />
                 <span className="capitalize text-xs text-neutral-400 truncate">{p.provider}</span>
               </div>
-              {p.status === 'ok' ? gridWindowLines(p) : <span className="text-sm font-medium text-red-400">{p.status}</span>}
+              {gridWindowLines(p)}
             </button>
           ))}
         </div>
@@ -411,11 +411,8 @@ function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list'
                   className={`shrink-0 ${p.status === 'ok' && !p.stale ? 'text-emerald-400' : p.status === 'ok' ? 'text-amber-400' : p.status ? 'text-red-500' : 'text-neutral-400'}`}
                 />
                 <span className="capitalize text-sm text-neutral-300 truncate">{p.provider}</span>
-                {p.status !== 'ok' && (
-                  <span className="text-sm font-medium text-red-400 ml-auto shrink-0">{p.status}</span>
-                )}
               </div>
-              {p.status === 'ok' && <div className="mt-1 pl-3.5">{listWindowLines(p)}</div>}
+              <div className="mt-1 pl-3.5">{listWindowLines(p)}</div>
             </button>
           ))}
         </div>
@@ -562,16 +559,16 @@ function OverviewBoardV3({ providers, cardGroup, onJump, showDepletion, fetchedA
     return <div className="flex items-center justify-center h-full text-neutral-400">No providers configured</div>;
   }
 
-  // A provider that's erroring (auth_expired etc.) or stale has nothing current
-  // to show — it stays in the sidebar (still flagged there in red) but drops out
-  // of the Overview board entirely rather than taking up card space with dead data.
-  const okProviders = providers.filter((p) => p.status === 'ok' && !p.stale);
-
   // Providers collapse into one shared compact card per group instead of taking a full
   // grid cell each — group is user-assigned (GlobalSettingsModal), see resolveGroup above.
   // 'none' (unassigned / explicitly "Full card") keeps today's rich per-provider card.
+  // Erroring (auth_expired etc.) or stale providers stay on the board — the daemon
+  // keeps their last-known windows on error, so each card variant below renders
+  // them greyed/red-flagged with that stale data instead of hiding them (they used
+  // to be filtered out here entirely, which dropped a provider from the board the
+  // moment its auth expired).
   const byGroup = (g: CardGroup) =>
-    okProviders.filter((p) => resolveGroup(p, cardGroup) === g).sort((a, b) => a.provider.localeCompare(b.provider));
+    providers.filter((p) => resolveGroup(p, cardGroup) === g).sort((a, b) => a.provider.localeCompare(b.provider));
   const support = byGroup('support');
   const daily = byGroup('daily');
   const weekly = byGroup('weekly');

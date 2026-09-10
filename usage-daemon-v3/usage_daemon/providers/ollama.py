@@ -7,14 +7,20 @@ cookie, NOT the API key.
 parse() is a PURE function of the page HTML so it unit-tests against the
 vendored fixture (tests/fixtures/ollama-settings.html) with no network.
 fetch() adds the fetch + auth-expiry detection around it.
+
+Ollama redesigned this page 2026-09: the old "Cloud usage" heading with
+separate "Session usage"/"Weekly usage" meters is gone, replaced by one
+"Included usage" heading with a single "<tier> usage" meter (observed live
+2026-09-09 against a real free-tier account — confirmed authenticated: HTTP
+200, real usage data, no login redirect). The stale "Cloud usage" substring
+check was misreading that redesigned-but-authenticated page as logged out.
 """
 
 from __future__ import annotations
 
 import re
 
-SESSION_COLOR = "#E69F00"  # Okabe-Ito orange
-WEEKLY_COLOR = "#56B4E9"  # Okabe-Ito blue
+USAGE_COLOR = "#E69F00"  # Okabe-Ito orange
 
 ID = "ollama"
 LABEL = "Ollama Cloud"
@@ -26,9 +32,8 @@ from ..errors import AuthExpiredError, RateLimitedError
 from ..httputil import create_client
 
 _RE_TIER = re.compile(r'capitalize"[^>]*>\s*([A-Za-z]+)\s*</span', re.S)
-_RE_SESSION = re.compile(r'aria-label="Session usage (\d+(?:\.\d+)?)% used"')
-_RE_WEEKLY = re.compile(r'aria-label="Weekly usage (\d+(?:\.\d+)?)% used"')
-_RE_TIME = re.compile(r'data-time="([^"]+)"')
+_RE_USAGE = re.compile(r'aria-label="([A-Za-z ]+usage) (\d+(?:\.\d+)?)% used"')
+_RE_RESET_TIME = re.compile(r'data-time="([^"]+)"\s*>\s*Resets in')
 _RE_SEGMENT = re.compile(
     r'data-usage-segment\b[^>]*?data-model="([^"]+)"[^>]*?data-requests="(\d+)"', re.S
 )
@@ -36,34 +41,23 @@ _RE_SEGMENT = re.compile(
 
 def parse(html: str) -> dict:
     """Pure function of the settings page HTML -> {tier, windows, segments}."""
-    if not re.search(r"Cloud usage", html):
+    if not re.search(r"Included usage|Cloud usage", html):
         raise AuthExpiredError("ollama.com session expired")
 
     m = _RE_TIER.search(html)
     tier = m.group(1).lower() if m else "unknown"
 
-    sess = _RE_SESSION.search(html)
-    week = _RE_WEEKLY.search(html)
-
-    times = [m2.group(1) for m2 in _RE_TIME.finditer(html)]
+    usage = _RE_USAGE.search(html)
+    reset = _RE_RESET_TIME.search(html)
 
     windows = [
         {
-            "id": "session",
-            "label": "Session",
-            "letter": "Se",
-            "pct": float(sess.group(1)) if sess else None,
-            "resets_at": times[0] if len(times) > 0 else None,
-            "color": SESSION_COLOR,
-            "will_deplete": False,
-        },
-        {
-            "id": "weekly",
-            "label": "Weekly",
-            "letter": "Wk",
-            "pct": float(week.group(1)) if week else None,
-            "resets_at": times[1] if len(times) > 1 else None,
-            "color": WEEKLY_COLOR,
+            "id": "usage",
+            "label": usage.group(1).strip() if usage else "Usage",
+            "letter": "Us",
+            "pct": float(usage.group(2)) if usage else None,
+            "resets_at": reset.group(1) if reset else None,
+            "color": USAGE_COLOR,
             "will_deplete": False,
         },
     ]
@@ -86,8 +80,7 @@ def create_provider(client=None):
             "usageUrl": DEFAULT_URL,
             "auth": {"kind": "cookie"},
             "windows": [
-                {"id": "session", "label": "Session", "color": SESSION_COLOR},
-                {"id": "weekly", "label": "Weekly", "color": WEEKLY_COLOR},
+                {"id": "usage", "label": "Usage", "color": USAGE_COLOR},
             ],
             "tiers": ["free", "pro"],
         }

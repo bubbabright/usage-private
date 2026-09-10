@@ -1,9 +1,0 @@
-{
-  "data": {
-    "myself": {
-      "clientBalance": 12.34,
-      "underBalance": false,
-      "minBalance": 5
-    }
-  }
-}
