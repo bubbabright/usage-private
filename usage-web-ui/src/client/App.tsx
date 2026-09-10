@@ -691,11 +691,9 @@ function fmtUptime(s: number) {
 // Daemon status + lifecycle controls. Compact header form (upper-right).
 // Talks only over /usage/health and /usage/admin/* — no coupling to daemon
 // internals. Buttons appear only when the daemon reports control is enabled
-// (config [control] allow_control). The daemon runs under the `usage-daemon`
-// --user systemd unit (Restart=always), so a stop self-heals in ~5s and
-// restart respawns directly. "Start" can't be served by a stopped daemon, so
-// it surfaces the systemctl command instead.
-function DaemonPanel() {
+// (config [control] allow_control). The backend can also surface service/log
+// hints so this panel doesn't have to hardcode a specific systemd unit name.
+function DaemonPanel({ onHealthChange }: { onHealthChange?: (health: any | null) => void }) {
   const [health, setHealth] = useState<any>(null);
   const [busy, setBusy] = useState<string | null>(null);
   const [note, setNote] = useState<string | null>(null);
@@ -711,9 +709,15 @@ function DaemonPanel() {
   const load = async () => {
     try {
       const r = await fetch('/usage/health');
-      if (r.ok) { setHealth(await r.json()); return; }
+      if (r.ok) {
+        const next = await r.json();
+        setHealth(next);
+        onHealthChange?.(next);
+        return;
+      }
     } catch { /* unreachable */ }
     setHealth(null);
+    onHealthChange?.(null);
   };
   useEffect(() => {
     load();
@@ -723,6 +727,8 @@ function DaemonPanel() {
 
   const down = !health;
   const control = health?.control ?? {};
+  const startHint = typeof control.start_hint === 'string' ? control.start_hint : null;
+  const logHint = typeof control.log_hint === 'string' ? control.log_hint : null;
   // Only non-zero buckets are shown — "0 stale / 0 down" on every health line
   // was noise; the tooltip keeps the full breakdown.
   const providerCounts = down
@@ -735,7 +741,7 @@ function DaemonPanel() {
 
   const act = async (action: string) => {
     if (action === 'start') {
-      setNote('run: systemctl --user start usage-daemon');
+      setNote(startHint ? `run: ${startHint}` : 'start it via your service manager');
       return;
     }
     setBusy(action); setNote(null);
@@ -748,9 +754,9 @@ function DaemonPanel() {
           await new Promise((res) => setTimeout(res, 1000));
           try { const h = await fetch('/usage/health'); if (h.ok) { setHealth(await h.json()); setNote('back up'); return; } } catch { /* still down */ }
         }
-        setNote('did not come back — check: journalctl --user -u usage-daemon -n 50');
+        setNote(logHint ? `did not come back — check: ${logHint}` : 'did not come back — check the daemon logs');
       } else if (action === 'stop') {
-        setNote('stopping…');
+        setNote(body.hint || (body.supervised ? 'stopping… systemd will restart it' : 'stopping…'));
         setTimeout(load, 1500);
       } else if (!r.ok) {
         setNote(body.hint || body.error || 'unavailable');
@@ -763,7 +769,7 @@ function DaemonPanel() {
   };
 
   const statusTitle = down
-    ? 'Daemon unreachable — start via systemctl --user start usage-daemon'
+    ? (startHint ? `Daemon unreachable — start via ${startHint}` : 'Daemon unreachable — start it via your service manager')
     : `Daemon v${health.version} · up ${fmtUptime(health.uptime_s)} · ${providerCounts}${health.under_systemd ? '' : ' · not supervised'}`;
 
   return (
@@ -795,7 +801,7 @@ function DaemonPanel() {
           <Power size={12} />
           <span className="hidden sm:inline">Stop</span>
         </button>
-        <button disabled={!!busy} onClick={() => act('start')} title="Start (shows the systemctl command to run)"
+        <button disabled={!!busy} onClick={() => act('start')} title="Start (shows the daemon start command to run)"
           className="flex items-center gap-1 px-2 py-1 rounded bg-neutral-800 hover:bg-neutral-700 disabled:opacity-40 transition-colors">
           <Play size={12} />
           <span className="hidden sm:inline">Start</span>
@@ -856,6 +862,7 @@ function ProviderRow({ p, sidebarCollapsed, selectedProvider, onSelect, setSetti
 
 export function App() {
   const [providers, setProviders] = useState<any[]>([]);
+  const [daemonHealth, setDaemonHealth] = useState<any>(null);
   const [providersFetchedAt, setProvidersFetchedAt] = useState<number | null>(null);
   // Selecting a provider swaps main content to its dashboard page directly
   // (no flyout/drawer) -- selectedProvider === null shows the Overview board.
@@ -1028,16 +1035,22 @@ export function App() {
       }}
     >
       {/* Full-width top header — logo left, daemon controls + settings upper-right */}
-      <header className="shrink-0 bg-neutral-900/95 border-b border-neutral-800 px-3 md:px-4 py-2.5 flex items-center justify-between gap-3">
+      <header className="shrink-0 bg-neutral-900/92 backdrop-blur-xl border-b border-neutral-800 px-3 md:px-4 py-2.5 flex items-center justify-between gap-3 shadow-lg shadow-black/20">
         <button onClick={() => { setSelectedProvider(null); }} className="text-left flex items-center gap-3 min-w-0">
           <img src="/hoboguppy-logo2.svg" alt="" className="w-9 h-9 shrink-0" />
           <div className="min-w-0">
             <p className="text-cyan-400 text-xs font-extrabold hidden sm:block leading-tight" style={{ fontFamily: 'ui-rounded, "Segoe UI Rounded", system-ui, sans-serif' }}>bubbAlab</p>
-            <h1 className="text-base md:text-lg font-bold leading-tight">Usage</h1>
+            <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
+              <h1 className="text-base md:text-lg font-bold leading-tight text-white">Provider Usage Monitor</h1>
+              <span className="inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[11px] font-medium text-cyan-200">
+                Python daemon{daemonHealth?.version ? ` v${daemonHealth.version}` : ''}
+              </span>
+            </div>
+            <p className="hidden md:block text-xs text-neutral-400 leading-tight">Live quota dashboard across local and hosted providers</p>
           </div>
         </button>
         <div className="relative flex items-center gap-2 shrink-0">
-          <DaemonPanel />
+          <DaemonPanel onHealthChange={setDaemonHealth} />
           <button
             onClick={() => setShowGlobalSettings(true)}
             className="p-1.5 rounded-md text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 transition-colors shrink-0"

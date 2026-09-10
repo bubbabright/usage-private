@@ -60,8 +60,8 @@ JSONL 20k-line cap is gone — that was the point of the SQLite move).
 - `snapshots(provider TEXT, t INTEGER, tier TEXT, raw_json TEXT, PRIMARY KEY(provider, t))`
   — every successful poll, full A2 payload (windows/segments/meta).
 - `window_series(provider TEXT, window_id TEXT, t INTEGER, pct REAL, INDEX(provider, window_id, t))`
-  — denormalized per-window % time-series for `burnrate` (least-squares slope,
-  `will_deplete`) and `headline` (poll/12h/24h lookbacks, `pct_1h_ago`).
+  — denormalized per-window % time-series for client-side depletion math and
+  `headline` (poll/12h/24h lookbacks, `pct_1h_ago`).
 - `state(key TEXT PRIMARY KEY, value TEXT)` — usage_urls overrides, migration
   markers, daemon identity/version.
 
@@ -94,7 +94,7 @@ query param; the rest as Bearer (deepgram uses `Token`, elevenlabs `xi-api-key`)
 | 5 | cohere | **trailing-month** tokens + **calls quota from x-ratelimit-\* headers** (used=4, cap=300, resets_at=reset) + per-model segments + daily meta |
 | 6 | llm7 | daily_tokens 10609/1M pct 1.06; tier free_token; 24h rolling -> learn reset (best-effort resets_at) |
 | 7 | hyper | hypercredits used=100-20=80, cap 100; tier free; per-model segments (in/out/cache/total, Hc, $); resets_at from "Next Hypercredit refresh in 2 weeks" |
-| 8 | openrouter | key_limit 58.8/100 (**resets_at = limit_reset**) + credits balance tile; meta rate_limit{requests,interval} + usage_{daily,weekly,monthly} |
+| 8 | openrouter | key_limit from server remaining when available (else reset-window usage fallback), `resets_at = limit_reset` when present, plus credits balance tile; meta rate_limit{requests,interval} + usage_{daily,weekly,monthly} |
 | 9 | opencode-go | 5h/weekly/monthly $ windows (GO caps 12/30/60); local CLI sqlite hybrid; workspace id |
 | 10 | tavily | credits usage/limit (**resets_at = last_reset**); tier = current_plan |
 | 11 | context7 | requests/mo used/cap; resets_at null (no date in payload); tier = owner_plan |
@@ -106,7 +106,7 @@ query param; the rest as Bearer (deepgram uses `Token`, elevenlabs `xi-api-key`)
 | 17 | groq | daily_requests from x-ratelimit-\*-requests headers (**resets_at from duration string**); 900s cadence |
 | 18 | elevenlabs | characters used/cap (**resets_at = next_character_count_reset_unix**); meta uses `account_status` not `status` |
 | 19 | consensus | pro_messages(15)/deep_reviews(3)/snapshots(10); **resets_at = last_reset + 30d** |
-| 20 | runpod | balance $ (clientBalance, used_is_remaining); will_deplete = under_balance |
+| 20 | runpod | balance $ (clientBalance, used_is_remaining); surface `under_balance` in meta |
 | 21 | github | REST/search/graphql call budgets from /rate_limit; **resets_at = resource.reset** each |
 ## 5. Standing rules (applied across all providers)
 
@@ -129,8 +129,8 @@ query param; the rest as Bearer (deepgram uses `Token`, elevenlabs `xi-api-key`)
 | `registry.py` | `registry.js` | compiled-in name->factory map |
 | `runner.py` | `runner.js` | self-rescheduling task, next_delay, jitter, 30s wait_for, 429 Retry-After floor + manual bypass, in_flight dedup, _mark_stale disk fallback, firefox self-heal once-guard |
 | `sqlite_store.py` | `store.js` | two-DB schema, async wrappers, migration, unbounded history |
-| `burnrate.py` | `burnrate.js` | least-squares slope, will_deplete |
-| `headline.py` | `headline.js` | poll/12h/24h movers + depleting |
+| `burnrate.py` | `burnrate.js` | least-squares slope helper for client-side depletion math |
+| `headline.py` | `headline.js` | poll/12h/24h movers |
 | `http.py` | `http.js` | `/usage/*` + `/metrics` (text/plain 0.0.0.4), no-store, 64kb body, provider allowlist / path-traversal guard |
 | `log.py` | `log.js` | sync append, size rotate, dual file+stderr, signal/exit handlers |
 | `cookiejar.py` | `cookiejar.js` | copy-before-read, per-domain, on-request only |
@@ -147,7 +147,8 @@ and the icon routes/assets.
 
 - Port all `test/*.test.js` -> `pytest` with vendored fixtures (identical
   inputs -> identical outputs for every `parse`, plus `next_delay`,
-  `will_deplete`, `headline`, store, cookiejar, time, log).
+  `headline`, store, cookiejar, time, log). Keep the burn-rate helper tested as
+  a client-side utility, not daemon-owned output.
 - Integration test: boot runner + `http.server` on a free port with stub
   providers; assert golden `/usage/*` + `/metrics` responses.
 - Side-by-side parity script against the live Node daemon before deletion.

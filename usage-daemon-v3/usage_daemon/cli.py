@@ -3,15 +3,11 @@
 Two data sources, never a poller:
 
   live    GET http://127.0.0.1:<port>/usage/providers — the running daemon's
-          in-memory rows (full wire contract: labels, used/cap, resets_at,
-          will_deplete, pct_1h_ago).
+          in-memory rows (labels, used/cap, resets_at, pct_1h_ago).
   sqlite  read-only peek at usage.sqlite's snapshots table — works while the
-          daemon is down (WAL allows concurrent readers). Only successful
-          polls are stored, so rows are compact {t, tier, <windowId>: pct};
-          window labels/caps/resets are not persisted, and pct-free windows
-          (balance meters) don't appear at all. pct_1h_ago and will_deplete
-          are recomputed client-side from history via the same helpers the
-          runner uses.
+          daemon is down (WAL allows concurrent readers). Latest snapshots are
+          stored with full window metadata; 1h deltas are recomputed client-side
+          from compact history rows in the same DB.
 
 `auto` tries live first and falls back to sqlite. Secrets are NEVER read.
 """
@@ -29,9 +25,8 @@ import tomllib
 from datetime import datetime
 from pathlib import Path
 
-from .burnrate import will_deplete
 from .history_utils import find_activity_base
-from .sqlite_store import default_state_dir
+from .sqlite_store import default_state_dir, history_row
 
 LIVE_TIMEOUT_S = 2.0
 ONE_HOUR_MS = 60 * 60 * 1000
@@ -104,6 +99,8 @@ def _sqlite_rows(state_dir: str) -> list[dict]:
     """Latest snapshot per provider, shaped like runner.list() rows.
 
     Read-only (mode=ro) so a CLI run can never create or migrate anything.
+    Supports both new full-snapshot rows and older compact-history rows already
+    on disk.
     """
     import sqlite3
 
@@ -127,14 +124,39 @@ def _sqlite_rows(state_dir: str) -> list[dict]:
                 cur = json.loads(r["row"])
             except Exception:
                 continue
-            history = [
-                json.loads(h["row"])
-                for h in conn.execute(
-                    "SELECT row FROM snapshots WHERE provider=? AND t>=? ORDER BY t",
-                    (r["provider"], cutoff),
-                )
-                if h["row"]
-            ]
+            history = []
+            for h in conn.execute(
+                "SELECT row FROM snapshots WHERE provider=? AND t>=? ORDER BY t",
+                (r["provider"], cutoff),
+            ):
+                if not h["row"]:
+                    continue
+                try:
+                    obj = json.loads(h["row"])
+                except Exception:
+                    continue
+                history.append(history_row(obj) if isinstance(obj, dict) and isinstance(obj.get("windows"), list) else obj)
+
+            if isinstance(cur, dict) and isinstance(cur.get("windows"), list):
+                windows = []
+                for w in cur.get("windows", []):
+                    pct = w.get("pct")
+                    base = find_activity_base(history, w["id"], cur["t"], ONE_HOUR_MS) if isinstance(pct, (int, float)) else None
+                    pct_1h_ago = base["value"] if base and base["value"] <= pct else None
+                    clean = {k: v for k, v in w.items() if k != "will_deplete"}
+                    windows.append({**clean, "pct_1h_ago": pct_1h_ago})
+                rows.append({
+                    **cur,
+                    "provider": cur.get("provider") or r["provider"],
+                    "status": cur.get("status") or "ok",
+                    "stale": bool(cur.get("stale", False)),
+                    "t": cur.get("t") or r["t"],
+                    "tier": cur.get("tier", r["tier"]),
+                    "error": cur.get("error"),
+                    "windows": windows,
+                })
+                continue
+
             windows = []
             for wid, pct in cur.items():
                 if wid in ("t", "tier") or not isinstance(pct, (int, float)):
@@ -152,8 +174,7 @@ def _sqlite_rows(state_dir: str) -> list[dict]:
                     "used_is_remaining": False,
                     "color": None,
                     "cycles_remaining": None,
-                    "resets_at": None,  # not persisted; live source has it
-                    "will_deplete": will_deplete(history, wid, pct, None, cur["t"]),
+                    "resets_at": None,
                     "pct_1h_ago": pct_1h_ago,
                 })
             rows.append({
@@ -209,8 +230,7 @@ def _value_text(w: dict) -> str:
     pct, used, cap = w.get("pct"), w.get("used"), w.get("cap")
     unit = w.get("unit") or ""
     if isinstance(pct, (int, float)):
-        bang = "!" if w.get("will_deplete") else ""
-        return f"{_fmt_num(pct)}%{bang}"
+        return f"{_fmt_num(pct)}%"
     if isinstance(used, (int, float)) and isinstance(cap, (int, float)):
         return f"{_fmt_num(used)}/{_fmt_num(cap)}{(' ' + unit) if unit else ''}"
     if isinstance(used, (int, float)):
@@ -219,9 +239,7 @@ def _value_text(w: dict) -> str:
     return w.get("label") or w.get("id") or "?"
 
 
-def _pct_color(pct, will_deplete: bool) -> int | None:
-    if will_deplete:
-        return 35  # magenta: burning past its reset
+def _pct_color(pct) -> int | None:
     if not isinstance(pct, (int, float)):
         return None
     if pct >= 85:
@@ -235,7 +253,7 @@ def _window_segments(w: dict, color: bool) -> list[str]:
     """One window → short colored tokens (name, bar, value, reset, delta)."""
     name = w.get("letter") or w.get("label") or w.get("id") or "?"
     pct = w.get("pct")
-    code = _pct_color(pct, w.get("will_deplete"))
+    code = _pct_color(pct)
     out = [_paint(name, 1 if color else None, color)]
     if isinstance(pct, (int, float)):
         filled = max(0, min(8, round(pct / 100 * 8)))

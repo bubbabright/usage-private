@@ -22,8 +22,16 @@ def store(tmp_path):
     return Store(state_dir=str(tmp_path))
 
 
-def snap(t, pct, window="w5h"):
-    return {"t": t, "tier": "pro", "windows": [{"id": window, "pct": pct}]}
+def snap(t, pct, window="w5h", provider="demo"):
+    return {
+        "provider": provider,
+        "t": t,
+        "tier": "pro",
+        "status": "ok",
+        "stale": False,
+        "windows": [{"id": window, "label": "5h", "pct": pct, "resets_at": "2026-09-07T12:00:00Z"}],
+        "segments": [],
+    }
 
 
 class _Stub(BaseHTTPRequestHandler):
@@ -66,7 +74,7 @@ LIVE_ROW = [{
         "pct": 42, "used": 42, "cap": 100, "unit": "%",
         "used_is_remaining": False, "color": "#56B4E9",
         "cycles_remaining": None, "resets_at": None,
-        "will_deplete": False, "pct_1h_ago": 10,
+        "pct_1h_ago": 10,
     }],
 }]
 
@@ -97,6 +105,8 @@ def test_sqlite_source_json_passthrough(capsys, store):
     assert rows[0]["provider"] == "demo"
     assert rows[0]["status"] == "ok"
     assert rows[0]["windows"][0]["pct"] == 12
+    assert rows[0]["windows"][0]["label"] == "5h"
+    assert rows[0]["windows"][0]["resets_at"] == "2026-09-07T12:00:00Z"
 
 
 def test_sqlite_source_picks_latest_snapshot_per_provider(capsys, store):
@@ -109,7 +119,7 @@ def test_sqlite_source_picks_latest_snapshot_per_provider(capsys, store):
 
 def test_sqlite_source_provider_filter(capsys, store):
     store.append("demo", snap(1000, 12))
-    store.append("other", snap(1000, 50, window="day"))
+    store.append("other", snap(1000, 50, window="day", provider="other"))
     rc, out = _run(capsys, "--source", "sqlite", "--state-dir", store.dir, "-p", "other")
     assert rc == 0
     assert "other" in out
@@ -231,7 +241,7 @@ def test_render_table_is_pure_and_colorless_by_default():
 def test_render_table_wraps_long_window_lists():
     row = dict(LIVE_ROW[0])
     row["windows"] = [
-        {"id": f"w{i}", "label": f"Window{i}", "pct": i, "will_deplete": False}
+        {"id": f"w{i}", "label": f"Window{i}", "pct": i}
         for i in range(12)
     ]
     out = render_table([row], width=60, color=False)
@@ -241,13 +251,14 @@ def test_render_table_wraps_long_window_lists():
         assert len(ln) <= 61, "wrapped lines respect the width cap"
 
 
-def test_render_table_marks_depleting_window_with_bang():
+def test_render_table_shows_plain_pct_without_backend_forecast():
     row = {
         "provider": "p", "status": "ok", "stale": False, "t": 1, "error": None,
-        "windows": [{"id": "w", "label": "W", "pct": 50, "will_deplete": True}],
+        "windows": [{"id": "w", "label": "W", "pct": 50}],
     }
     out = render_table([row], width=110, color=False)
-    assert "50%!" in out
+    assert "50%" in out
+    assert "50%!" not in out
 
 
 def test_render_table_balance_meter_without_pct():

@@ -7,7 +7,9 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
+    "dev:v3": "vite --config vite.config.v3.ts",
     "build": "vite build",
+    "build:v3": "vite build --config vite.config.v3.ts",
     "preview": "vite preview"
   },
   "engines": {

@@ -97,11 +97,17 @@ def api(tmp_path):
     thread = threading.Thread(target=loop.run_forever, daemon=True)
     thread.start()
 
+    admin_calls = []
+
+    def admin_action(action):
+        admin_calls.append(action)
+
     meta = {
         "version": "test",
         "startedAt": time.time() * 1000,
         "underSystemd": False,
         "control": {"allow_control": False},
+        "admin_action": admin_action,
     }
     server = create_server(runner, meta, loop=loop, port=0)
     port = server.server_address[1]
@@ -121,6 +127,8 @@ def api(tmp_path):
         good_state=good_state,
         run=run,
         tmp=tmp_path,
+        meta=meta,
+        admin_calls=admin_calls,
     )
 
     server.shutdown()
@@ -135,7 +143,15 @@ def test_health_shape(api):
     body = r.json()
     assert body["version"] == "test"
     assert body["under_systemd"] is False
-    assert body["control"] == {"enabled": False, "restart": False, "stop": False, "start": False}
+    assert body["control"] == {
+        "enabled": False,
+        "restart": False,
+        "stop": False,
+        "start": False,
+        "service_name": "usage-daemon-v3",
+        "start_hint": "systemctl --user start usage-daemon-v3",
+        "log_hint": "journalctl --user -u usage-daemon-v3 -n 50",
+    }
     assert body["providers"]["total"] == 3
     assert body["providers"]["ok"] == 1  # good
     assert body["providers"]["down"] == 2  # bad + tok (no auth yet)
@@ -221,7 +237,57 @@ def test_cookie_post_round_trip_then_delete(api):
 def test_admin_restart_403_when_control_disabled(api):
     r = httpx.post(f"{api.base}/usage/admin/restart")
     assert r.status_code == 403
-    assert r.json() == {"error": "control disabled"}
+    assert r.json() == {
+        "error": "control disabled",
+        "hint": "set [control] allow_control = true in config.toml",
+    }
+
+
+def test_admin_start_returns_backend_hint(api):
+    api.meta["control"] = {"allow_control": True, "service_name": "usage-daemon-v3"}
+    r = httpx.post(f"{api.base}/usage/admin/start")
+    assert r.status_code == 400
+    assert r.json() == {
+        "error": "start unsupported over HTTP",
+        "hint": "systemctl --user start usage-daemon-v3",
+    }
+
+
+def test_admin_restart_invokes_callback(api):
+    api.meta["control"] = {"allow_control": True, "service_name": "usage-daemon-v3"}
+    r = httpx.post(f"{api.base}/usage/admin/restart")
+    assert r.status_code == 200
+    assert r.json() == {
+        "ok": True,
+        "action": "restart",
+        "via": "respawn",
+        "log_hint": "journalctl --user -u usage-daemon-v3 -n 50",
+    }
+    for _ in range(20):
+        if api.admin_calls == ["restart"]:
+            break
+        time.sleep(0.05)
+    assert api.admin_calls == ["restart"]
+
+
+def test_admin_stop_invokes_callback_with_systemd_hint(api):
+    api.meta["underSystemd"] = True
+    api.meta["control"] = {"allow_control": True, "service_name": "usage-daemon-v3"}
+    r = httpx.post(f"{api.base}/usage/admin/stop")
+    assert r.status_code == 200
+    assert r.json() == {
+        "ok": True,
+        "action": "stop",
+        "via": "exit",
+        "supervised": True,
+        "hint": "use systemctl --user stop usage-daemon-v3 to keep it down",
+        "log_hint": "journalctl --user -u usage-daemon-v3 -n 50",
+    }
+    for _ in range(20):
+        if api.admin_calls == ["stop"]:
+            break
+        time.sleep(0.05)
+    assert api.admin_calls == ["stop"]
 
 
 def test_metrics_only_counts_ok_providers(api):

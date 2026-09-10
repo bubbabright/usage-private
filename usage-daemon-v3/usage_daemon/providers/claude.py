@@ -1,8 +1,11 @@
 """Claude Code usage provider plugin (port of src/providers/claude.js).
 
 Reads the OAuth usage endpoint with the same accessToken the `claude` CLI uses
-(~/.claude/.credentials.json). READ-ONLY: never mutates the token — an
-expired/missing one just reports auth_expired; `claude login` is the mutator.
+(`~/.claude/.credentials.json`). In practice this host may also carry a raw
+bearer token in that path; accept either shape so a fresh v3 process can use
+what the live environment already has on disk. READ-ONLY: never mutates the
+token — an expired/missing one just reports auth_expired; `claude login` is the
+mutator.
 
 The claude-code/<version> User-Agent gates real 429s: Anthropic buckets UAs too
 far behind the current CLI. Resolution: config override > detected
@@ -216,7 +219,7 @@ def create_provider(credentials_path: str | None = None, client=None):
         return st["resolvedUserAgent"]
 
     async def fetch() -> str:
-        async def _read():
+        def _read():
             try:
                 return Path(st["credentialsPath"]).read_text(encoding="utf-8")
             except OSError:
@@ -225,12 +228,18 @@ def create_provider(credentials_path: str | None = None, client=None):
         raw = await asyncio.to_thread(_read)
         if raw is None:
             raise AuthExpiredError("no Claude Code credentials file found")
+        text = raw.strip()
+        access_token = None
+        st["lastTokenExpiresAt"] = None
         try:
-            j = json.loads(raw)
+            j = json.loads(text)
         except Exception:
-            raise AuthExpiredError("no Claude Code credentials file found")
-        access_token = (j or {}).get("claudeAiOauth", {}).get("accessToken")
-        st["lastTokenExpiresAt"] = (j or {}).get("claudeAiOauth", {}).get("expiresAt")
+            # Practical compatibility: some local setups store the bearer token
+            # directly in this path instead of the CLI's JSON envelope.
+            access_token = text or None
+        else:
+            access_token = (j or {}).get("claudeAiOauth", {}).get("accessToken")
+            st["lastTokenExpiresAt"] = (j or {}).get("claudeAiOauth", {}).get("expiresAt")
         if not access_token:
             raise AuthExpiredError("no accessToken in credentials file")
 
@@ -243,8 +252,17 @@ def create_provider(credentials_path: str | None = None, client=None):
                 "User-Agent": await _resolve_user_agent(),
             },
         )
-        if res.status_code == 401:
-            raise AuthExpiredError()
+        if res.status_code in (401, 403):
+            detail = None
+            try:
+                err = res.json().get("error") or {}
+                detail = err.get("message")
+                scopes = ((err.get("details") or {}).get("required_scopes"))
+                if isinstance(scopes, list) and scopes:
+                    detail = f"{detail or 'OAuth token rejected'} (required scopes: {', '.join(map(str, scopes))})"
+            except Exception:
+                detail = None
+            raise AuthExpiredError(detail or "Claude Code token missing, expired, or insufficiently scoped")
         if res.status_code == 429:
             ra = res.headers.get("retry-after")
             raise RateLimitedError(int(ra) if ra and ra.isdigit() else None)

@@ -1,41 +1,44 @@
 # STATUS — usage-daemon-v3
 
-> Session-continuity snapshot. Last updated: **2026-09-06** (after commit
-> `00df168`). If you are a fresh session/agent picking this up: read
-> `PLAN-python-rewrite.md` first (architecture, locked decisions, §4 provider
-> data models), then this file (where we are, what's next, how to work).
+> Session-continuity snapshot. Last updated: **2026-09-08**.
+> Fresh session? Read `PLAN-python-rewrite.md` first (architecture, locked
+> decisions, §4 provider data models, §3 two-SQLite storage), then this file.
 
 ## Where we are
 
-**Milestone 2 of 5, 8/21 providers ported. 162 tests green. 4 commits on master.**
+**Milestone 5 of 5. All 21 providers ported. 264 tests green. `usage` CLI shipped.**
+The daemon is fully operational; remaining work is packaging, systemd cut-over,
+documentation, and a handful of frontend open items (below).
 
 | Milestone | State |
 |---|---|
-| 1. Scaffold + 15 core modules + 4 wire-confirmed pilots (ollama, claude, hyper, cohere) | ✅ done |
-| 2. Port remaining 17 providers | 🟡 **8/21 — 13 left** |
-| 3. Wire-parity re-run vs live JS daemon | 🟡 one differential check done at the 111-test mark (see `FRONTEND_HANDOFF.md`); stale, re-run at M3 |
+| 1. Scaffold + core modules + 4 wire-confirmed pilots (ollama, claude, hyper, cohere) | ✅ done |
+| 2. Port remaining 17 providers | ✅ done — 21/21 |
+| 3. Wire-parity re-run vs live JS daemon | 🟡 one differential check done at the 111-test mark (stale); re-run at cutover |
 | 4. Cutover: swap systemd ExecStart, 1-week clean run | ❌ |
 | 5. Delete Node/JS tree, python-only docs + deploy | ❌ |
 
-- Ported (8): `ollama claude hyper cohere · abacus llm7 github runpod`
-- Missing (13): `mistral grok opencode-go openrouter cloudflare deepgram groq
-  firecrawl serpapi tavily context7 consensus elevenlabs`
-- Not started: deploy artifacts (`usage-daemon.service`, `install.sh`, `scripts/`)
-  and `usage_daemon/usage_urls.py` (still a stub; JS ground truth =
+- Ported (21): `ollama claude hyper cohere · abacus llm7 github runpod · mistral
+  grok opencode-go openrouter cloudflare deepgram groq firecrawl serpapi tavily
+  context7 consensus elevenlabs`
+- Current validation: `uv run pytest -q` → **264 passed, 1 warning**
+- Shipped this session: the **`usage` CLI** (`usage_daemon/cli.py` + `tests/test_cli.py`)
+  — live-daemon/sqlite table + JSON view; the **registry coverage guard**
+  (`tests/test_registry.py`) that fails if any provider module is not wired into
+  `_register_compiled_in()`; and **`scripts/setup_uv.sh`** to bootstrap a uv env.
+- Not started: deploy artifacts (`usage-daemon.service`, `install.sh`) and
+  `usage_daemon/usage_urls.py` (still a stub; JS ground truth =
   `../usage-daemon/src/usage-urls.js`).
-- Shipped this session: the **`usage` CLI** (`usage_daemon/cli.py` +
-  `tests/test_cli.py`, 21 tests) — live-daemon/sqlite table + JSON view; and the
-  **registry coverage guard** (`tests/test_registry.py`) that fails if any provider
-  module is not wired into `_register_compiled_in()`.
 
 ## Commands (all via uv — never `python3 tests/test_x.py` directly)
 
 ```sh
 cd /mnt/nas/projects/usage/usage-daemon-v3
-uv run pytest -q                     # whole suite (~12s)
-uv run usage                         # CLI: live daemon first, sqlite fallback
+./scripts/setup_uv.sh          # one-time: create .venv, install -e .[dev]
+uv run pytest -q               # whole suite (~12s)
+uv run usage                   # CLI: live daemon first, sqlite fallback
 uv run usage -p claude --json
-uv run usage-daemon-v3 --port 8788   # side-by-side boot
+uv run usage-daemon --port 8788  # side-by-side boot
 ```
 
 Environment facts:
@@ -51,65 +54,118 @@ Environment facts:
 - The `usage` CLI resolves the daemon port from config.toml; loopback requests
   bypass proxy env vars (`trust_env=False`).
 
-## The porting loop (for each of the 13 remaining providers)
+## Storage (LOCKED — plan §3)
+
+Two SQLite files at `~/.local/state/usage-daemon/` (honors `USAGE_STATE_DIR`),
+WAL mode, foreign keys, one writer, concurrent readers. History is **unbounded**
+(the JSONL 20k-line cap is gone).
+
+- `usage.sqlite` — the only DB the HTTP paths touch. `snapshots` (full A2 payload
+  per successful poll), `window_series` (denormalized per-window % time-series for
+  client-side depletion + headline lookbacks), `state` (usage_urls overrides,
+  migration markers, daemon identity/version).
+- `secrets.sqlite` — mode 0600, never returned over HTTP. One-time import from
+  `*_file` paths on first run; after that pastes/webui writes hit the DB and
+  `*_file` becomes optional.
+
+## Depletion moved client-side
+
+`will_deplete` / daemon-owned depletion was **removed from the backend**. The
+SQLite history is faithfully populated; clients (the `usage` CLI and the web UI)
+derive depletion from history + `resets_at` instead of a server-provided flag.
+The wire field is kept (defaults false) for contract compatibility.
+
+## Frontend
+
+- `usage-web-ui` (V2 layout) and `usage-web-ui-v2` (V3 redesign with
+  `OverviewBoardV3`) live side-by-side; V3 is A/B'd against V2 and defaults to V2.
+- Frontend behavior rules (grey stale rows, `used_is_remaining` flip, ISO
+  `resets_at`, epoch-ms timestamps, client-side depletion) are encoded in
+  `FRONTEND_HANDOFF.md`.
+- No CORS headers on v3 yet — frontend must be served same-origin (or add CORS
+  when needed).
+- `GET /` returns 501 (dashboard/report not ported — intentional; that work is the
+  frontend's job).
+
+## Open items
+
+### 1. Overview auth-expired visibility fix (frontend, NOT started)
+
+When a provider's auth expires (e.g. **context7**), it currently **disappears
+from the Overview board**. It should remain visible — greyed/stale, showing its
+last-known windows + the `error` text — exactly like a stale row elsewhere.
+
+Root cause is in `OverviewBoardV3` (`usage-web-ui/src/client/App.tsx`, mirrored in
+`usage-web-ui-v2`):
+
+```tsx
+// A provider that's erroring (auth_expired etc.) or stale has nothing current
+// to show — it stays in the sidebar (still flagged there in red) but drops out
+// of the Overview board entirely rather than taking up card space with dead data.
+const okProviders = providers.filter((p) => p.status === 'ok' && !p.stale);
+```
+
+This filter discards auth_expired/stale providers before they reach the cards. The
+daemon keeps the last-known snapshot (windows intact) on error, so the data to
+render is available — only the filter hides it.
+
+Fix direction: stop excluding non-ok providers from the board; render them in a
+greyed/error state with their stale `windows` (the board already has a red-dot +
+`status (stale)` block for `p.status !== 'ok'`). The sidebar already keeps them;
+the board should too. Requested end of last session — not yet implemented.
+
+### 2. Wire-parity re-run (milestone 3)
+
+The single differential check against the live JS daemon was done at the
+111-test mark and is stale. Re-run a fresh shape-for-shape diff before cutover.
+
+### 3. Deploy artifacts + migration
+
+Create `usage-daemon.service`, `install.sh`, and the one-time JSONL/secret-file →
+two-SQLite migration with a marker so it runs once.
+
+### 4. Cutover + JS deletion (milestones 4–5)
+
+Swap systemd `ExecStart` to the Python entry; run 1 week clean; then delete the
+entire Node/JS tree and update README/AGENTS/ARCHITECTURE to be Python-accurate.
+
+## The porting loop (complete for all 21 — kept as a reference)
 
 Ground truth is the JS tree — **read it before cutover deletes it**:
-`../usage-daemon/src/providers/<name>.js` plus its `../usage-daemon/test/*.test.js`.
-Fixtures pin the parsers: vendored at `tests/fixtures/` (all 13 already present —
-never hand-edit a fixture to make code pass; if the port disagrees with a fixture,
-the port is wrong; if the fixture disagrees with the JS source, the JS source wins).
+`../usage-daemon/src/providers/<name>.js` plus its
+`../usage-daemon/test/*.test.js`. Fixtures pin the parsers: vendored at
+`tests/fixtures/` (all present — never hand-edit a fixture to make code pass; if
+the port disagrees with a fixture, the port is wrong; if the fixture disagrees
+with the JS source, the JS source wins).
 
-1. Port → `usage_daemon/providers/<name>.py`. Factory must be **zero-arg callable**
-   (newer ports export `create()`; pilots export `create_provider(client=None)` —
-   either works, `registry.create()` calls it with no args).
-2. Tests → `tests/test_providers_<name>.py` (port the JS test: identical inputs →
-   identical parse output; cover error/auth-expired mapping too).
+1. Port → `usage_daemon/providers/<name>.py`. Factory must be a **zero-arg
+   callable** (newer ports export `create()`; pilots export
+   `create_provider(client=None)` — either works).
+2. Tests → `tests/test_providers_<name>.py` (identical inputs → identical parse
+   output; cover error/auth-expired mapping too).
 3. Register in `_register_compiled_in()` in `usage_daemon/__main__.py` (imports
-   alphabetical). `tests/test_registry.py` **fails if you forget** — it walks the
-   package and demands module ⇄ registration parity.
+   alphabetical). `tests/test_registry.py` **fails if you forget**.
 4. `uv run pytest -q`, then boot side-by-side (`--port 8788`): the new provider
    must log `provider enabled`, not `config names unknown provider, skipping`.
 
-Auth-kind batches (plan §4): cookie → `mistral opencode-go tavily context7
-consensus` · oauth-file → `grok` · token → `openrouter cloudflare deepgram groq
-firecrawl serpapi elevenlabs`
-
-Fixture map: mistral → `mistral-{spend-limit,usage,vibe}.json` · grok →
-`grok-usage.json` · opencode-go → `opencode-go-go.html` · openrouter →
-`openrouter-{credits,key}.json` · cloudflare → `cloudflare-ai-day.json` ·
-deepgram → `deepgram-balances.json` · groq → `groq-ratelimit.json` · firecrawl →
-`firecrawl-credit-usage.json` · serpapi → `serpapi-account.json` · tavily →
-`tavily-account.json` · context7 → `context7-stats.json` · consensus →
-`consensus-client.json` · elevenlabs → `elevenlabs-subscription.json`
-
 ## Gotchas learned the hard way (do not re-learn)
 
-- `from usage_daemon import registry` binds the **module** — `registry.py` shadows
-  its own instance name. The singleton instance is
+- `from usage_daemon import registry` binds the **module** — `registry.py`
+  shadows its own instance name. The singleton instance is
   `from usage_daemon.registry import registry` (tests import it `as reg`).
 - The registry is a module-global singleton: tests that mutate it must
   snapshot/restore (see the `clean_registry` fixture in `tests/test_registry.py`).
-- runpod `minBalance`: JS passes a numeric value through (`typeof === 'number'`),
-  absent → `null`. The fixture test asserts the passthrough.
+- runpod `minBalance`: JS passes a numeric value through, absent → `null`. The
+  fixture test asserts the passthrough.
 - CLI live fetch must request `/usage/providers` explicitly (the daemon 404s on
   `/`), and needs `trust_env=False` on loopback or `http_proxy` breaks it.
 - Balance meters (`used_is_remaining: true` — runpod, hyper) flip bar semantics:
   the fill is % remaining, not % used.
-- In CLI sqlite mode, `pct_1h_ago` / `will_deplete` are recomputed client-side with
-  the runner's own `find_activity_base` / `will_deplete` helpers — if burnrate
-  logic changes, both consumers stay in sync automatically; don't fork the math.
-
-## Test inventory (162 total)
-
-`test_cli 21 · test_cookiejar 19 · test_http 14 · test_runner 13 ·
-test_providers_hyper 11 · test_providers_ollama 9 · test_headline 9 ·
-test_history_utils 8 · test_providers_llm7 7 · test_providers_github 7 ·
-test_providers_claude 7 · test_registry 6 · test_log 6 · test_timeutil 5 ·
-test_store 5 · test_providers_runpod 5 · test_providers_cohere 5 ·
-test_providers_abacus 5`
+- In CLI sqlite mode, `pct_1h_ago` is recomputed client-side from compact
+  history.
 
 ## Repo-root strays (not v3's; untouched on purpose)
 
-`usage-web-ui-v2/`, `digest.txt`, `.codegraph/`, and an untracked duplicate of the
-plan at `../usage-daemon/PLAN-python-rewrite.md` — the **v3 copy of the plan is the
-committed, authoritative one**.
+`usage-web-ui-v2/`, `digest.txt`, `.codegraph/`, and an untracked duplicate of
+the plan at `../usage-daemon/PLAN-python-rewrite.md` — the **v3 copy of the plan
+is the committed, authoritative one**.

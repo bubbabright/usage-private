@@ -18,15 +18,13 @@ from __future__ import annotations
 
 import asyncio
 import json
-import subprocess
-import sys
 import threading
 import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import unquote, urlsplit
 
 from .headline import compute_headline
-from .log import log, log_file as default_log_file
+from .log import log
 
 MAX_BODY = 64 * 1024
 
@@ -68,8 +66,15 @@ class _Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_error(self, status, message):
-        self._send_json({"error": message}, status=status)
+    def _send_error(self, status, message, **extra):
+        self._send_json({"error": message, **extra}, status=status)
+
+    def _control_settings(self):
+        control = self._meta.get("control") or {}
+        service_name = str(control.get("service_name") or "usage-daemon-v3")
+        start_hint = str(control.get("start_hint") or f"systemctl --user start {service_name}")
+        log_hint = str(control.get("log_hint") or f"journalctl --user -u {service_name} -n 50")
+        return control, service_name, start_hint, log_hint
 
     def _read_body(self):
         try:
@@ -164,7 +169,8 @@ class _Handler(BaseHTTPRequestHandler):
             ok = sum(1 for p in rows if p["status"] == "ok" and not p["stale"])
             stale = sum(1 for p in rows if p["status"] == "ok" and p["stale"])
             down = sum(1 for p in rows if p["status"] != "ok")
-            control_enabled = meta.get("control", {}).get("allow_control") is True
+            control, service_name, start_hint, log_hint = self._control_settings()
+            control_enabled = control.get("allow_control") is True
             started = meta.get("startedAt", 0)
             self._send_json({
                 "version": meta.get("version", "unknown"),
@@ -176,6 +182,9 @@ class _Handler(BaseHTTPRequestHandler):
                     "restart": control_enabled,
                     "stop": control_enabled,
                     "start": False,
+                    "service_name": service_name,
+                    "start_hint": start_hint,
+                    "log_hint": log_hint,
                 },
                 "providers": {"total": len(rows), "ok": ok, "stale": stale, "down": down},
             })
@@ -282,44 +291,61 @@ class _Handler(BaseHTTPRequestHandler):
         self._send_error(404, "not found")
 
     def _admin(self, seg):
-        runner = self._runner
         meta = self._meta
         if not seg:
             self._send_error(404, "unknown action")
             return
         action = seg[0]
-        control_enabled = meta.get("control", {}).get("allow_control") is True
+        control, service_name, start_hint, log_hint = self._control_settings()
+        control_enabled = control.get("allow_control") is True
         log.warn("admin action requested", {
-            "action": action, "ua": self.headers.get("User-Agent"),
+            "action": action,
+            "ua": self.headers.get("User-Agent"),
             "control_enabled": control_enabled,
         })
         if not control_enabled:
-            self._send_error(403, "control disabled")
+            self._send_error(403, "control disabled", hint="set [control] allow_control = true in config.toml")
             return
         if action == "start":
-            self._send_error(400, "start unsupported over HTTP")
+            self._send_error(400, "start unsupported over HTTP", hint=start_hint)
             return
-        if action in ("restart", "stop"):
-            under = meta.get("underSystemd", False)
-            self._send_json({"ok": True, "action": action, "via": "systemd" if under else "respawn"})
-
-            def _later():
-                time.sleep(0.15)
-                runner.stop()
-                if action == "restart" and not under:
-                    self._respawn()
-                sys.exit(0)
-
-            threading.Thread(target=_later, daemon=True).start()
+        if action not in ("restart", "stop"):
+            self._send_error(404, f"unknown action: {action}")
             return
-        self._send_error(404, f"unknown action: {action}")
 
-    def _respawn(self):
-        logfile = self._meta.get("logFile") or default_log_file()
-        cmd = [sys.executable, "-m", "usage_daemon"]
-        try:
-            with open(logfile, "a") as f:
-                env = {"USAGE_LOG_STDERR": "0"}
-                subprocess.Popen(cmd, stdout=f, stderr=f, env=env, start_new_session=True)
-        except Exception as err:
-            log.fatal("respawn failed — daemon is going down with no replacement", {"err": err})
+        admin_action = meta.get("admin_action")
+        if not callable(admin_action):
+            self._send_error(503, "control unavailable", hint=f"check: {log_hint}")
+            return
+
+        under = meta.get("underSystemd", False)
+        if action == "restart":
+            self._send_json({
+                "ok": True,
+                "action": action,
+                "via": "systemd" if under else "respawn",
+                "log_hint": log_hint,
+            })
+        else:
+            stop_hint = (
+                f"use systemctl --user stop {service_name} to keep it down"
+                if under
+                else start_hint
+            )
+            self._send_json({
+                "ok": True,
+                "action": action,
+                "via": "exit",
+                "supervised": under,
+                "hint": stop_hint,
+                "log_hint": log_hint,
+            })
+
+        def _later():
+            time.sleep(0.15)
+            try:
+                admin_action(action)
+            except Exception as err:
+                log.error("admin action failed", {"action": action, "err": err})
+
+        threading.Thread(target=_later, daemon=True).start()

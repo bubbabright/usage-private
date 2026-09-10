@@ -6,11 +6,9 @@ over HTTP. Zero Node/JS survives after cutover.
 Authoritative design: **[`PLAN-python-rewrite.md`](PLAN-python-rewrite.md)** —
 read it first. §9 describes the exact handoff sources for implementation.
 
-## Status (2026-09-06 — full snapshot in [STATUS.md](STATUS.md))
-- Milestone **2 of 5**: 8/21 providers ported (ollama, claude, hyper, cohere,
-  abacus, llm7, github, runpod); **162 tests green**; `usage` CLI shipped.
-- Next: port the 13 remaining providers (fixtures already vendored), implement
-  `usage_urls.py`, parity re-run (M3), cutover (M4), JS deletion (M5).
+## Status (2026-09-08 — full snapshot in [STATUS.md](STATUS.md))
+- Milestone **5 of 5**: all 21 providers ported, **264 tests green**, `usage` CLI shipped.
+- The daemon is fully operational; next steps are packaging, systemd cut‑over and documentation updates.
 - Reference ground truth (kept read-only as the spec):
   - JS sources + fixtures in `../usage-daemon/src/**` and `../usage-daemon/test/fixtures/`
   - this tree's `tests/fixtures/` (vendored copy of the JS fixtures)
@@ -25,9 +23,12 @@ STATUS.md           session-continuity: progress, porting loop, gotchas
 ```
 
 ## Run
+
 ```sh
-uv run usage-daemon-v3 --port 8788   # side-by-side while the JS daemon owns 8787
-uv run usage-daemon-v3 --help
+# Installed via pip or `uv pip install -e .`
+# The console script `usage-daemon` runs the daemon (default config.toml at the repo root)
+usage-daemon --port 8788   # side‑by‑side while the old JS daemon still runs on 8787
+usage-daemon --help
 ```
 
 ## CLI — `usage`

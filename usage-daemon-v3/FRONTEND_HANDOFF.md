@@ -6,9 +6,10 @@
 > below — performed at the 111-test mark, before four more providers landed;
 > a fresh parity re-run is planned for milestone 3, see `STATUS.md`).
 >
-> Provider coverage note: v3 currently runs **8/21 providers** (ollama, claude,
-> hyper, cohere, abacus, llm7, github, runpod). Until cutover, the JS daemon on
-> 8787 still serves all 21 — develop against it; the shapes below are identical.
+> Provider coverage note: v3 now has **21/21 providers ported**. Until final
+> cutover, the JS daemon on `8787` remains the reference surface for wire parity
+> checks; the shapes below are intended to match it except for explicitly noted
+> divergences.
 
 ## What runs where
 
@@ -22,7 +23,7 @@
 |---|---|---|
 | GET | `/usage/health` | version, uptime_s, provider counts, control flags |
 | GET | `/usage/providers` | **main list endpoint** — array of provider rows |
-| GET | `/usage/headline` | poll/12h/24h deltas + depleting warning |
+| GET | `/usage/headline` | poll/12h/24h deltas |
 | GET | `/usage/{provider}/current` | snapshot; **404** `{"error":"no snapshot yet"}` before first poll |
 | GET | `/usage/{provider}/history` | compact rows, oldest→newest (10k+ rows live) |
 | GET | `/usage/{provider}/config` | provider's config.toml view |
@@ -64,7 +65,6 @@ All unknown things → 404 `{"error": ...}`; unknown provider under /usage → 4
       "color": "#E69F00",
       "cycles_remaining": null,
       "resets_at": "2026-09-04T16:00:00-04:00",  // ISO 8601 with local offset or null
-      "will_deplete": false,          // burn-rate says it hits 100% before reset
       "pct_1h_ago": 0                 // number or null (no history yet)
     }
   ]
@@ -88,8 +88,7 @@ Real failure row (render stale rows greyed with `error` shown):
   "poll": null,
   "12h": {"provider": "claude", "provider_label": "Claude Code", "window_id": "weekly",
           "window_label": "7d", "color": "#56B4E9", "from_pct": 19, "to_pct": 0, "delta": -19},
-  "24h": { ...same shape... },
-  "depleting": null   // or {provider, provider_label, window_id, window_label, color, resets_at}
+  "24h": { ...same shape... }
 }
 ```
 
@@ -118,6 +117,7 @@ store `segments` (e.g. ollama: `[{"model": "gemma4:31b", "requests": 61}]`).
 - `used_is_remaining: true` flips the fill semantics — `pct` is % *remaining*, not used.
 - `resets_at` is an ISO string with local offset — render with local formatting; it is **not** epoch ms.
 - Poll deltas: prefer computing from `pct_1h_ago` per window; headline gives 12h/24h.
+- Depletion/"will hit 100 before reset" is client-side policy now: derive it from history + `resets_at`, not from a daemon-owned `will_deplete` field.
 - Timestamps are **epoch milliseconds** (`t`, `last_success_t`, `next_poll_at`, `started_at`); only `resets_at`/`cookie_expires_at` are ISO 8601 strings.
 
 ## What's tested (111 tests, all green)
@@ -135,9 +135,9 @@ Contract guards live in `tests/test_http.py` — if a route shape drifts, CI cat
 ## Known gaps (explicitly out of scope for the frontend)
 
 - `GET /` returns 501 (dashboard/report not ported — that's this handoff).
-- Not yet ported from JS (13): mistral, grok, opencode-go, openrouter,
-  cloudflare, deepgram, groq, firecrawl, serpapi, tavily, context7, consensus,
-  elevenlabs. Ported: ollama, claude, hyper, cohere, abacus, llm7, github, runpod.
+- Provider porting is complete for all 21 JS providers. Remaining work is live
+  parity validation, edge-case fixes, and frontend follow-through on deliberate
+  backend differences (for example, backend-owned depletion was removed).
 - `usage_urls.py` (state-backed usage-URL overrides) is a stub.
 - No CORS headers on v3 yet — frontend must be served same-origin (or we add CORS when needed).
 - Docs, install.sh, dashboard.js/report.js — cutover chores, see `STATUS.md`.

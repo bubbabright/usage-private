@@ -1,8 +1,8 @@
 """The runner (port of src/runner.js).
 
 Schedules each configured provider on its own interval, normalizes its raw
-parse into the A2 snapshot, stores history, computes will_deplete, and keeps the
-last-known snapshot per provider (fail-soft: errors mark stale, never blank).
+parse into the A2 snapshot, stores history, and keeps the last-known snapshot
+per provider (fail-soft: errors mark stale, never blank).
 """
 
 from __future__ import annotations
@@ -12,7 +12,6 @@ import random
 import time as _time
 
 from . import sqlite_store as _store
-from .burnrate import will_deplete
 from .cookiejar import cookie_header_for
 from .errors import code_of, AuthExpiredError, RateLimitedError
 from .history_utils import find_activity_base
@@ -185,7 +184,6 @@ class Runner:
                         w.get("cycles_remaining") if isinstance(w.get("cycles_remaining"), (int, float)) else None
                     ),
                     "resets_at": w.get("resets_at"),
-                    "will_deplete": bool(w.get("will_deplete")),
                     "pct_1h_ago": (
                         w.get("pct_1h_ago") if isinstance(w.get("pct_1h_ago"), (int, float)) else None
                     ),
@@ -308,10 +306,10 @@ class Runner:
                     else None
                 )
                 pct_1h_ago = base["value"] if base and base["value"] <= w_pct else None
+                window = {k: v for k, v in w.items() if k != "will_deplete"}
                 windows.append({
-                    **w,
+                    **window,
                     "resets_at": resets_at,
-                    "will_deplete": will_deplete(history, w["id"], w_pct, resets_at, t),
                     "pct_1h_ago": pct_1h_ago,
                 })
 
@@ -411,7 +409,6 @@ class Runner:
                         "pct": last_row.get(wid),
                         "resets_at": None,
                         "color": cfg_by_id.get(wid, {}).get("color"),
-                        "will_deplete": False,
                     }
                     for wid in last_row
                     if wid not in ("t", "tier")

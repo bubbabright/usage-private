@@ -1,5 +1,8 @@
 """Port of test/store.test.js — history round-trip + read cache (sqlite_store)."""
 
+import json
+import sqlite3
+
 import pytest
 
 from usage_daemon.sqlite_store import Store, history_row
@@ -11,7 +14,15 @@ def store(tmp_path):
 
 
 def snap(t, pct):
-    return {"t": t, "tier": "pro", "windows": [{"id": "w5h", "pct": pct}]}
+    return {
+        "provider": "demo",
+        "t": t,
+        "tier": "pro",
+        "status": "ok",
+        "stale": False,
+        "windows": [{"id": "w5h", "label": "5h", "pct": pct, "resets_at": "2026-09-07T12:00:00Z"}],
+        "segments": [],
+    }
 
 
 def test_read_on_provider_with_no_history_returns_empty(store):
@@ -48,3 +59,16 @@ def test_history_row_drops_windows_with_no_pct():
         }
     )
     assert row == {"t": 5, "tier": "free", "a": 1}
+
+
+def test_append_persists_full_snapshot_json(store):
+    store.append("demo", snap(1000, 12))
+    conn = sqlite3.connect(store.usage_path)
+    try:
+        raw = conn.execute("SELECT row FROM snapshots WHERE provider=? AND t=?", ("demo", 1000)).fetchone()[0]
+    finally:
+        conn.close()
+    saved = json.loads(raw)
+    assert saved["windows"][0]["label"] == "5h"
+    assert saved["windows"][0]["resets_at"] == "2026-09-07T12:00:00Z"
+    assert saved["status"] == "ok"

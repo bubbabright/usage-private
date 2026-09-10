@@ -32,7 +32,9 @@ def _provider_modules() -> set[str]:
         name for _, name, _ in pkgutil.iter_modules(pkg.__path__) if name != "__init__"
     }
     assert modules, "no provider modules discovered — import path broken?"
-    return modules
+    # Module names are pythonic (opencode_go); registry/config names are the
+    # user-facing ids with hyphens (opencode-go). Normalize before comparing.
+    return {name.replace("_", "-") for name in modules}
 
 
 def test_register_compiled_in_covers_every_provider_module(clean_registry):

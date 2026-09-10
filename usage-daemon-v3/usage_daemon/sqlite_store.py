@@ -59,13 +59,25 @@ def default_state_dir() -> str:
 
 
 def history_row(snapshot: dict) -> dict:
-    """Flatten a snapshot's windows into the compact history row contract."""
+    """Flatten a full snapshot's windows into the compact history row contract."""
     row: dict = {"t": snapshot["t"], "tier": snapshot.get("tier")}
     for w in snapshot.get("windows", []):
         p = w.get("pct")
         if isinstance(p, (int, float)):
             row[w["id"]] = p
     return row
+
+
+def _compact_row(stored: dict) -> dict:
+    """Normalize stored snapshot JSON back to the compact history-row view.
+
+    New rows persist the full snapshot for client-side consumers; older rows may
+    already be compact history rows. read() and window-series rebuild work with
+    either shape.
+    """
+    if isinstance(stored, dict) and isinstance(stored.get("windows"), list):
+        return history_row(stored)
+    return stored if isinstance(stored, dict) else {}
 
 
 class _C:
@@ -173,7 +185,7 @@ class Store:
         ws = []
         for r in rows:
             try:
-                obj = json.loads(r["row"])
+                obj = _compact_row(json.loads(r["row"]))
             except Exception:
                 continue
             for k, v in obj.items():
@@ -186,13 +198,13 @@ class Store:
 
     # --- history write ---
     def append(self, provider: str, snapshot: dict) -> None:
-        """Persist a snapshot (compact history row + per-window series)."""
+        """Persist a snapshot (full JSON + compact per-window series)."""
         row = history_row(snapshot)
         t = int(snapshot["t"])
         cur = self._usage()
         cur.execute(
             "INSERT OR REPLACE INTO snapshots(provider, t, tier, row) VALUES (?,?,?,?)",
-            (provider, t, row.get("tier"), json.dumps(row)),
+            (provider, t, row.get("tier"), json.dumps(snapshot)),
         )
         for k, v in row.items():
             if k in ("t", "tier") or not isinstance(v, (int, float)):
@@ -219,7 +231,7 @@ class Store:
                 "SELECT row FROM snapshots WHERE provider=? ORDER BY t", (provider,)
             ):
                 try:
-                    rows.append(json.loads(r["row"]))
+                    rows.append(_compact_row(json.loads(r["row"])))
                 except Exception:
                     continue
         except Exception:

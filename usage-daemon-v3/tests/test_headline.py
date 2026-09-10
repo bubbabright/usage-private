@@ -81,90 +81,12 @@ def test_zero_delta_does_not_win():
     assert out["poll"] is None
 
 
-def test_depleting_picks_short_window_with_soonest_projected_eta():
-    providers_data = [
-        {
-            "name": "claude",
-            "label": "Claude",
-            "current": {
-                "windows": [
-                    {
-                        **_w("session", "5h", 80),
-                        "will_deplete": True,
-                        "resets_at": "2026-07-21T00:00:00Z",
-                    }
-                ]
-            },
-            # rising ~10pt/hr -> hits 100 in ~2h
-            "history": [row(2, {"session": 60}), row(1, {"session": 70}), row(0.1, {"session": 80})],
-        },
-        {
-            "name": "opencode-go",
-            "label": "OpenCode Go",
-            "current": {
-                "windows": [
-                    {
-                        **_w("5h", "5 Hour", 90),
-                        "will_deplete": True,
-                        "resets_at": "2026-07-21T00:00:00Z",
-                    }
-                ]
-            },
-            # rising ~20pt/hr -> hits 100 in ~0.5h, sooner than claude's ~2h
-            "history": [row(2, {"5h": 50}), row(1, {"5h": 70}), row(0.1, {"5h": 90})],
-        },
-    ]
-    out = compute_headline(providers_data, NOW)
-    assert out["depleting"]["provider"] == "opencode-go"
-
-
-def test_depleting_weekly_monthly_windows_are_excluded():
-    providers_data = [
-        {
-            "name": "claude",
-            "label": "Claude",
-            "current": {
-                "windows": [
-                    {
-                        **_w("weekly", "7d", 95, "#56B4E9"),
-                        "will_deplete": True,
-                        "resets_at": "2026-07-25T00:00:00Z",
-                    }
-                ]
-            },
-            "history": [row(2, {"weekly": 50}), row(1, {"weekly": 80}), row(0.1, {"weekly": 95})],
-        },
-    ]
-    out = compute_headline(providers_data, NOW)
-    assert out["depleting"] is None
-
-
-def test_depleting_ignores_will_deplete_false():
-    providers_data = [
-        {
-            "name": "claude",
-            "label": "Claude",
-            "current": {
-                "windows": [
-                    {
-                        **_w("session", "5h", 30),
-                        "will_deplete": False,
-                        "resets_at": "2026-07-25T00:00:00Z",
-                    }
-                ]
-            },
-            "history": [row(2, {"session": 10}), row(1, {"session": 20}), row(0.1, {"session": 30})],
-        },
-    ]
-    out = compute_headline(providers_data, NOW)
-    assert out["depleting"] is None
-
-
 def test_all_scopes_null_when_no_usable_history():
     out = compute_headline([], NOW)
     assert out["poll"] is None
     assert out["12h"] is None
     assert out["24h"] is None
+    assert "depleting" not in out
 
 
 def test_pct_null_windows_are_ignored():
