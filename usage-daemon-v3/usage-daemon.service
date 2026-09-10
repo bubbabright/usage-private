@@ -1,0 +1,21 @@
+[Unit]
+Description=usage-daemon (Python rewrite) – poll LLM/API provider quotas and expose HTTP API on :8787
+# Repo: /mnt/nas/projects/usage/usage-daemon-v3
+After=network-online.target
+Wants=network-online.target
+# Prevent crash-loop rapid restarts
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/nas/projects/usage/usage-daemon-v3
+# No --config flag: config.py checks $XDG_CONFIG_HOME/usage-daemon/config.toml
+# first regardless of cwd, which is where the real provider config/secrets live.
+ExecStart=/mnt/nas/projects/usage/usage-daemon-v3/.venv/bin/usage-daemon
+# Restart on failure, but back off to avoid tight loops.
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target

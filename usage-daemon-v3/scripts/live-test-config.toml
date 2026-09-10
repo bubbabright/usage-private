@@ -1,0 +1,121 @@
+port = 8788
+
+[providers.ollama]
+enabled = true
+interval_seconds = 300
+cookie_file = "~/.config/usage-daemon/ollama.cookie"
+cookie_from_firefox = "ollama.com"
+
+[providers.claude]
+enabled = true
+interval_seconds = 300
+
+[providers.grok]
+enabled = true
+interval_seconds = 300
+
+[providers.mistral]
+enabled = true
+interval_seconds = 300
+cookie_file = "~/.config/usage-daemon/mistral.cookie"
+cookie_from_firefox = "mistral.ai"
+
+[providers.opencode-go]
+enabled = true
+interval_seconds = 300
+cookie_file = "~/.config/usage-daemon/opencode-go.cookie"
+cookie_from_firefox = "opencode.ai"
+workspace_id = "wrk_01KX9539EQF6MYWDM1SMYBPS1E"
+
+[providers.cloudflare]
+enabled = true
+interval_seconds = 300
+account_id = "f35176e8f58cb23aafb0acf2c246e2fe"
+api_token_file = "/home/daniel/.config/usage-daemon/cloudflare.token"
+
+[providers.openrouter]
+enabled = true
+interval_seconds = 300
+api_key_file = "/home/daniel/.config/usage-daemon/openrouter.key"
+
+[providers.deepgram]
+enabled = true
+interval_seconds = 300
+api_key_file = "/home/daniel/.config/usage-daemon/deepgram.key"
+
+[providers.groq]
+enabled = true
+interval_seconds = 900
+api_key_file = "/home/daniel/.config/usage-daemon/groq.key"
+
+[providers.firecrawl]
+enabled = true
+interval_seconds = 300
+api_key_file = "/home/daniel/.config/usage-daemon/firecrawl.key"
+
+[providers.serpapi]
+enabled = true
+interval_seconds = 300
+api_key_file = "/home/daniel/.config/usage-daemon/serpapi.key"
+
+[providers.llm7]
+enabled = true
+interval_seconds = 300
+api_token_file = "/home/daniel/.config/usage-daemon/llm7.token"
+
+[providers.abacus]
+enabled = true
+interval_seconds = 300
+cookie_file = "/home/daniel/.config/usage-daemon/abacus.cookie"
+cookie_from_firefox = "abacus.ai"
+
+[providers.hyper]
+enabled = true
+interval_seconds = 300
+api_token_file = "/home/daniel/.config/usage-daemon/hyper.token"
+cookie_file = "/home/daniel/.config/usage-daemon/hyper.cookie"
+cookie_from_firefox = "hyper.charm.land"
+
+[providers.tavily]
+enabled = true
+interval_seconds = 300
+cookie_file = "~/.config/usage-daemon/tavily.cookie"
+cookie_from_firefox = "app.tavily.com"
+
+[providers.context7]
+enabled = true
+interval_seconds = 300
+team_id = "4695ef49-78a3-4f24-94e6-8fc39e69056f"
+cookie_file = "~/.config/usage-daemon/context7.cookie"
+cookie_from_firefox = "context7.com"
+
+[providers.consensus]
+enabled = true
+interval_seconds = 300
+cookie_file = "~/.config/usage-daemon/consensus.cookie"
+cookie_from_firefox = "consensus.app"
+
+[providers.cohere]
+enabled = true
+interval_seconds = 900
+org_id = "ac29bf87-b6a5-4fd7-9989-01ca7ab02960"
+api_token_file = "~/.config/usage-daemon/cohere.token"
+
+[providers.elevenlabs]
+enabled = true
+interval_seconds = 300
+api_key_file = "~/.config/usage-daemon/elevenlabs.key"
+
+[providers.runpod]
+enabled = true
+interval_seconds = 300
+api_key_file = "~/.config/usage-daemon/runpod.key"
+
+[providers.github]
+enabled = true
+interval_seconds = 300
+api_key_file = "~/.config/usage-daemon/github.token"
+
+[control]
+allow_control = true
+service_name = "usage-daemon-v3"
