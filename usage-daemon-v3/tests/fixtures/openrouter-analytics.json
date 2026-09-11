@@ -1,0 +1,9 @@
+{
+  "data": {
+    "data": [
+      { "date__day": "2026-09-11", "request_count": "84" }
+    ],
+    "metadata": { "query_time_ms": 8, "row_count": 1, "truncated": false },
+    "cachedAt": 1789154295222
+  }
+}
