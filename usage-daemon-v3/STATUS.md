@@ -1,152 +1,230 @@
 # STATUS — usage-daemon-v3
 
-> Session-continuity snapshot. Last updated: **2026-09-08**.
+> Session-continuity snapshot. Last updated: **2026-09-09** (late session).
 > Fresh session? Read `PLAN-python-rewrite.md` first (architecture, locked
 > decisions, §4 provider data models, §3 two-SQLite storage), then this file.
 
 ## Where we are
 
-**Milestone 5 of 5. All 21 providers ported. 264 tests green. `usage` CLI shipped.**
-The daemon is fully operational; remaining work is packaging, systemd cut-over,
-documentation, and a handful of frontend open items (below).
+**All 21 providers ported AND committed. 270 tests green. Cutover done —
+but NOT the way originally planned (see below).** The JS daemon and old
+web UI are no longer part of this workspace at all: they were physically
+relocated to `/mnt/nas/projects/usage-old` (a sibling of `/mnt/nas/projects/usage`,
+outside this repo). `/mnt/nas/projects/usage/` now contains only
+`usage-daemon-v3` and `usage-web-ui` — nothing else.
 
 | Milestone | State |
 |---|---|
-| 1. Scaffold + core modules + 4 wire-confirmed pilots (ollama, claude, hyper, cohere) | ✅ done |
-| 2. Port remaining 17 providers | ✅ done — 21/21 |
-| 3. Wire-parity re-run vs live JS daemon | 🟡 one differential check done at the 111-test mark (stale); re-run at cutover |
-| 4. Cutover: swap systemd ExecStart, 1-week clean run | ❌ |
-| 5. Delete Node/JS tree, python-only docs + deploy | ❌ |
+| 1. Scaffold + core modules + 4 wire-confirmed pilots | ✅ done |
+| 2. Port remaining 17 providers | ✅ done — 21/21, all committed |
+| 3. Wire-parity re-run vs live JS daemon | ❌ never done — JS daemon is gone now, so this is moot |
+| 4. Cutover | ✅ done — v3 running on :8788, systemd-managed. Old JS daemon retired to `usage-old`. |
+| 5. Delete Node/JS tree | ✅ done (moved to `usage-old`, not deleted, by the user directly) |
 
 - Ported (21): `ollama claude hyper cohere · abacus llm7 github runpod · mistral
   grok opencode-go openrouter cloudflare deepgram groq firecrawl serpapi tavily
   context7 consensus elevenlabs`
-- Current validation: `uv run pytest -q` → **264 passed, 1 warning**
-- Shipped this session: the **`usage` CLI** (`usage_daemon/cli.py` + `tests/test_cli.py`)
-  — live-daemon/sqlite table + JSON view; the **registry coverage guard**
-  (`tests/test_registry.py`) that fails if any provider module is not wired into
-  `_register_compiled_in()`; and **`scripts/setup_uv.sh`** to bootstrap a uv env.
-- Not started: deploy artifacts (`usage-daemon.service`, `install.sh`) and
-  `usage_daemon/usage_urls.py` (still a stub; JS ground truth =
-  `../usage-daemon/src/usage-urls.js`).
+- Current validation: `uv run pytest -q` → **270 passed, 1 warning**
+- `usage_daemon/usage_urls.py` is still a stub (no JS ground truth to port from
+  anymore — it moved to `usage-old/usage-daemon/src/usage-urls.js` if still needed).
+
+## Cutover reality (read this before touching systemd)
+
+The plan was: swap systemd `ExecStart` to Python on port **8787** (JS's old
+production port), run clean for a week, then delete JS. What actually happened:
+
+1. Swapped the `usage-daemon.service` (`~/.config/systemd/user/`, **not** part of
+   either repo) to run v3 on :8787. Confirmed working live.
+2. User immediately reverted this — did **not** want the JS daemon touched at all,
+   even to restore it. Instead:
+3. v3 was moved to **port 8788** instead, staying systemd-managed
+   (`usage-daemon.service`, `enabled`, survives reboot). Port 8787 is now
+   **unused** — nothing listens there.
+4. `Restart=no` is currently set on the unit ("temporarily disabled during active
+   dev/testing") — if the daemon dies or is stopped, systemd will **not** bring it
+   back. Re-enable with `Restart=always` + `RestartSec=5` + `daemon-reload` when
+   testing settles down.
+5. The JS daemon itself was separately retired by the user moving the whole
+   `usage-daemon` + old `usage-web-ui-v2` trees to `/mnt/nas/projects/usage-old`.
+   It is not running, not installed anywhere in this workspace, and per explicit
+   standing instruction: **do not read, cd into, or otherwise touch
+   `/mnt/nas/projects/usage-old` for any reason.**
+
+Net effect: v3 is the only daemon running, on :8788, systemd-managed — just not on
+the port originally planned. `usage-daemon-v3/usage-daemon.service` (the repo's
+own copy of the unit, for reference/version control) should be kept in sync with
+`~/.config/systemd/user/usage-daemon.service` — the live installed copy is
+authoritative for now.
 
 ## Commands (all via uv — never `python3 tests/test_x.py` directly)
 
 ```sh
 cd /mnt/nas/projects/usage/usage-daemon-v3
 ./scripts/setup_uv.sh          # one-time: create .venv, install -e .[dev]
-uv run pytest -q               # whole suite (~12s)
+uv run pytest -q               # whole suite (~14s)
 uv run usage                   # CLI: live daemon first, sqlite fallback
 uv run usage -p claude --json
-uv run usage-daemon --port 8788  # side-by-side boot
+systemctl --user status usage-daemon.service   # check the real running instance (:8788)
 ```
 
 Environment facts:
-- The **JS daemon (v0.5.0) owns port 8787** (production, under systemd). Leave it
-  running until cutover — the frontend develops against it and the CLI falls back
-  gracefully.
-- v3 booted without `--port` reads the same `config.toml` (`port = 8787`), retries
-  ~6s, then **refuses to start** rather than double-bind. That refusal is correct
-  behavior, not a bug.
 - Config: `~/.config/usage-daemon/config.toml`. State: `~/.local/state/usage-daemon/`
-  (`usage.sqlite`, `daemon.log`). Both daemons share paths; secrets live in
-  `secrets.sqlite` (never over HTTP).
+  (`usage.sqlite`, `secrets.sqlite`, `daemon.log`).
 - The `usage` CLI resolves the daemon port from config.toml; loopback requests
-  bypass proxy env vars (`trust_env=False`).
+  bypass proxy env vars (`trust_env=False`). Note config.toml itself still says
+  `port = 8787` — the live daemon overrides that with `--port 8788` on the
+  command line (see the systemd unit). Keep this in mind if the CLI ever seems to
+  be talking to nothing.
+- `scripts/live-test-config.toml` is a duplicate of the real config.toml (port
+  8788, `[control] service_name = "usage-daemon-v3"`) used for manual side-by-side
+  testing before the systemd cutover — now redundant with the real unit, kept for
+  reference.
 
 ## Storage (LOCKED — plan §3)
 
 Two SQLite files at `~/.local/state/usage-daemon/` (honors `USAGE_STATE_DIR`),
 WAL mode, foreign keys, one writer, concurrent readers. History is **unbounded**
-(the JSONL 20k-line cap is gone).
+(the JSONL 20k-line cap is gone) — no retention/pruning exists yet (code-review
+flagged this, see below).
 
-- `usage.sqlite` — the only DB the HTTP paths touch. `snapshots` (full A2 payload
-  per successful poll), `window_series` (denormalized per-window % time-series for
-  client-side depletion + headline lookbacks), `state` (usage_urls overrides,
-  migration markers, daemon identity/version).
+- `usage.sqlite` — the only DB the HTTP paths touch. `snapshots` (full payload per
+  successful poll), `window_series`, `state`.
 - `secrets.sqlite` — mode 0600, never returned over HTTP. One-time import from
   `*_file` paths on first run; after that pastes/webui writes hit the DB and
   `*_file` becomes optional.
 
 ## Depletion moved client-side
 
-`will_deplete` / daemon-owned depletion was **removed from the backend**. The
-SQLite history is faithfully populated; clients (the `usage` CLI and the web UI)
-derive depletion from history + `resets_at` instead of a server-provided flag.
-The wire field is kept (defaults false) for contract compatibility.
+`will_deplete` / daemon-owned depletion was removed from `headline.py`. **The
+user is moving the remaining client-side depletion logic (`burnrate.py`) itself
+— do not touch `burnrate.py` this session or start "helping" with it
+unprompted.** Separately, code review found `runner.py` strips `will_deplete`
+from every window unconditionally, which throws away RunPod's real
+server-computed depletion signal (`underBalance`) — see open items.
 
 ## Frontend
 
-- `usage-web-ui` (V2 layout) and `usage-web-ui-v2` (V3 redesign with
-  `OverviewBoardV3`) live side-by-side; V3 is A/B'd against V2 and defaults to V2.
-- Frontend behavior rules (grey stale rows, `used_is_remaining` flip, ISO
-  `resets_at`, epoch-ms timestamps, client-side depletion) are encoded in
-  `FRONTEND_HANDOFF.md`.
-- No CORS headers on v3 yet — frontend must be served same-origin (or add CORS
-  when needed).
-- `GET /` returns 501 (dashboard/report not ported — intentional; that work is the
-  frontend's job).
+- `usage-web-ui` only now (the old V2/V3 A-B setup and `usage-web-ui-v2` are
+  gone — moved to `usage-old`).
+- Fixed this session: `OverviewBoardV3` no longer drops auth-expired/stale
+  providers from the board (`usage-web-ui/src/client/App.tsx` — the
+  `okProviders` filter that excluded non-`ok` providers was removed; grid/list
+  cards in `GroupedCard` now always render windows). Side effect flagged by
+  code review: the explicit status text badge (`auth_expired`, `rate_limited`)
+  was also dropped in the same change, leaving only a small colored dot to
+  signal trouble — worth a follow-up (see open items).
+- No CORS headers on v3 yet — frontend must be served same-origin.
+- `GET /` returns 501 (dashboard/report not ported — intentional).
 
-## Open items
+## Groq provider — real usage via browser session (2026-09-11)
 
-### 1. Overview auth-expired visibility fix (frontend, NOT started)
+The Groq provider was rewritten to stop wasting API quota on fake chat
+completions just to read `x-ratelimit-*` headers. It now authenticates through
+the user's Firefox session (`stytch_session_jwt` or `stytch_session`) and reads
+real usage from the platform activity API:
 
-When a provider's auth expires (e.g. **context7**), it currently **disappears
-from the Overview board**. It should remain visible — greyed/stale, showing its
-last-known windows + the `error` text — exactly like a stale row elsewhere.
+- `GET https://api.groq.com/platform/v1/organizations/{orgId}/activity`
+- `stytch_session` is exchanged for a fresh JWT via the Stytch B2B SDK when the
+  JWT cookie is absent
+- Reports actual metrics: **cost (USD)**, **generated tokens**, **context
+  tokens**, **total requests**
+- Per-model daily request-limit windows for known free-tier models
+  (`llama-3.1-8b-instant` = 14,400/day, whisper models = 1,000/day)
+- `model_limits` config override for custom models
+- Live smoke test passed against the real API (13 models, ~1,150 requests,
+  ~$0.05 over 7 days)
 
-Root cause is in `OverviewBoardV3` (`usage-web-ui/src/client/App.tsx`, mirrored in
-`usage-web-ui-v2`):
+Changed: `usage-daemon-v3/usage_daemon/providers/groq.py`,
+`usage-daemon-v3/tests/test_providers_groq.py`. Committed as `7f167fa`.
 
-```tsx
-// A provider that's erroring (auth_expired etc.) or stale has nothing current
-// to show — it stays in the sidebar (still flagged there in red) but drops out
-// of the Overview board entirely rather than taking up card space with dead data.
-const okProviders = providers.filter((p) => p.status === 'ok' && !p.stale);
-```
+## This session's fixes
 
-This filter discards auth_expired/stale providers before they reach the cards. The
-daemon keeps the last-known snapshot (windows intact) on error, so the data to
-render is available — only the filter hides it.
+1. **Ollama site redesign (real bug, not code regression)** — ollama.com
+   changed `/settings` around 2026-09: old "Cloud usage" heading + separate
+   "Session usage"/"Weekly usage" meters are gone, replaced by one "Included
+   usage" heading with a single "`<tier>` usage" meter. The old parser's
+   `"Cloud usage" not in html` check was misreading every real authenticated
+   page as logged-out. Fixed in `usage_daemon/providers/ollama.py`: now
+   recognizes `"Included usage"` too, and emits one `windows` entry (`id:
+   "usage"`) instead of `session`/`weekly`. Fixture re-vendored from a real
+   (sanitized) live page. Known follow-up: only captures the *first* usage
+   meter on the page — a pro-tier account with multiple meters would silently
+   under-report (code review finding, not yet fixed).
+2. **opencode-go**: `LABEL` renamed `"OpenCode Go"` → `"opencode.ai"` (id kept
+   as `opencode-go` — no config.toml/history migration). Added a real API-key
+   auth path (`GET /zen/go/v1/usage`, `Authorization: Bearer <key>`) as primary,
+   falling back to the existing cookie-scrape when no key is configured — per
+   steipete/CodexBar's `docs/opencode.md`. **Unverified against a live account**
+   (the user no longer subscribes to OpenCode Go) — field names are a
+   best-effort reconstruction of that doc's notation. Confirmed live: the
+   endpoint exists, returns 401 `{"error":{"message":"Missing API key."}}`
+   without a key, and a bogus `Bearer` key gets a distinct `"Unauthorized"` —
+   so the URL/header mechanism is right even though the exact success-path JSON
+   shape (`usage.rolling.percent` etc.) hasn't been seen for real.
+3. Bare `AuthExpiredError()`/`ProviderError()` calls in opencode_go.py's new
+   `_fetch_api()` now carry the server's actual error message instead of the
+   generic default text (previously showed as "Rejected: provider error" in
+   the webUI with no useful detail).
+4. **openrouter.py**: `key.data.rate_limit` ({requests, interval}), already
+   parsed into meta but previously dead-ended there, now also surfaces as an
+   informational `rate_limit` window (no pct/cap) when `requests > 0`. Also
+   added `RATE_LIMIT_COLOR`, a `config().windows` entry, 2 new tests, and
+   updated the existing `test_parse_key_window_alone_when_credits_missing`
+   (now 2 windows, not 1). Live-account check against the running daemon's
+   real key found OpenRouter now sends this field with a deprecated
+   `requests: -1` sentinel ("safe to ignore") on at least some keys — the
+   guard correctly suppresses the window there, so it may not render for
+   most/any real accounts today, but is kept since the field isn't
+   documented as gone entirely. Full writeup: `docs/openrouter.md` (new).
 
-Fix direction: stop excluding non-ok providers from the board; render them in a
-greyed/error state with their stale `windows` (the board already has a red-dot +
-`status (stale)` block for `p.status !== 'ok'`). The sidebar already keeps them;
-the board should too. Requested end of last session — not yet implemented.
+## Open items (from `/code-review`, 2026-09-09 — NONE fixed yet)
 
-### 2. Wire-parity re-run (milestone 3)
+A full-project background review (8-agent fan-out: line-by-line diff, efficiency,
+duplication, cross-file tracer, removed-behavior, altitude, simplification audits)
+surfaced ~16 real findings. Highest priority:
 
-The single differential check against the live JS daemon was done at the
-111-test mark and is stale. Re-run a fresh shape-for-shape diff before cutover.
+1. **`runner.py` strips `will_deplete` from every window** unconditionally,
+   discarding RunPod's real `underBalance`-derived signal before it ever reaches
+   `list()`/HTTP/CLI.
+2. **`claude.py` credential parsing, two bugs**: (a) a `json.loads` failure on
+   `~/.claude/.credentials.json` now falls back to sending the *raw file text*
+   as a bearer token to api.anthropic.com instead of failing fast locally; (b)
+   valid-but-non-dict JSON in that file crashes with an uncaught `AttributeError`
+   instead of raising `AuthExpiredError`, surfacing as a generic `error` status.
+3. `_under_systemd_supervision()` (`__main__.py`) misfires for GUI-launched
+   terminals (also under `app.slice`) — a manually-run daemon can get
+   `under_systemd=True`, so `/usage/admin/stop` skips self-respawn and leaves it
+   down indefinitely with a misleading "systemd will restart it" response.
+4. `ollama.py`'s reset-time regex requires `data-time="..."` to be immediately
+   followed by `>` — brittle to attribute reordering, fails silently (no error,
+   `resets_at` just goes null).
+5. `runner.py`'s `_mark_stale` history-fallback path matches old stored-history
+   window ids against the provider's *current* config — breaks transiently after
+   any provider's window schema changes (e.g. ollama's session/weekly → usage).
+6. `sqlite_store.py`: one global lock serializes all reads against writes despite
+   WAL mode; `Store._cache` is invalidated on every single write so it barely
+   ever hits; `append()` now writes full per-poll snapshot metadata with no
+   retention/pruning — unbounded growth.
+7. Auth/rate-limit status-code mapping (401/403→`AuthExpiredError`,
+   429→`RateLimitedError`) is copy-pasted near-verbatim into ~20 provider files
+   instead of one shared helper in `errors.py`.
+8. `http.py`: six near-identical try/except route handlers; `admin_action`'s
+   failures are only ever logged as a string after the HTTP response already
+   went out as `{"ok": true}`.
+9. `hyper.py`: several sub-requests swallow transport-level failures
+   (`except Exception: pass`) with no logging, degrading real infra problems
+   into a silent "credits missing".
+10. Overview cards lost their explicit error-status text (see Frontend section).
 
-### 3. Deploy artifacts + migration
+Full transcripts (raw, not cleaned up) live under
+`~/.claude/projects/-mnt-nas-projects-usage-usage-daemon-v3/<session-id>/subagents/`
+if more detail is needed than what's summarized above.
 
-Create `usage-daemon.service`, `install.sh`, and the one-time JSONL/secret-file →
-two-SQLite migration with a marker so it runs once.
+## The porting loop (complete for all 21 — kept as historical reference only)
 
-### 4. Cutover + JS deletion (milestones 4–5)
-
-Swap systemd `ExecStart` to the Python entry; run 1 week clean; then delete the
-entire Node/JS tree and update README/AGENTS/ARCHITECTURE to be Python-accurate.
-
-## The porting loop (complete for all 21 — kept as a reference)
-
-Ground truth is the JS tree — **read it before cutover deletes it**:
-`../usage-daemon/src/providers/<name>.js` plus its
-`../usage-daemon/test/*.test.js`. Fixtures pin the parsers: vendored at
-`tests/fixtures/` (all present — never hand-edit a fixture to make code pass; if
-the port disagrees with a fixture, the port is wrong; if the fixture disagrees
-with the JS source, the JS source wins).
-
-1. Port → `usage_daemon/providers/<name>.py`. Factory must be a **zero-arg
-   callable** (newer ports export `create()`; pilots export
-   `create_provider(client=None)` — either works).
-2. Tests → `tests/test_providers_<name>.py` (identical inputs → identical parse
-   output; cover error/auth-expired mapping too).
-3. Register in `_register_compiled_in()` in `usage_daemon/__main__.py` (imports
-   alphabetical). `tests/test_registry.py` **fails if you forget**.
-4. `uv run pytest -q`, then boot side-by-side (`--port 8788`): the new provider
-   must log `provider enabled`, not `config names unknown provider, skipping`.
+Ground truth was the JS tree, now at `/mnt/nas/projects/usage-old/usage-daemon/`
+— **do not go read it**, per standing instruction. This section is dead process
+documentation; nothing left to port.
 
 ## Gotchas learned the hard way (do not re-learn)
 
@@ -155,17 +233,18 @@ with the JS source, the JS source wins).
   `from usage_daemon.registry import registry` (tests import it `as reg`).
 - The registry is a module-global singleton: tests that mutate it must
   snapshot/restore (see the `clean_registry` fixture in `tests/test_registry.py`).
-- runpod `minBalance`: JS passes a numeric value through, absent → `null`. The
-  fixture test asserts the passthrough.
+- runpod `minBalance`: passes a numeric value through, absent → `null`.
 - CLI live fetch must request `/usage/providers` explicitly (the daemon 404s on
   `/`), and needs `trust_env=False` on loopback or `http_proxy` breaks it.
 - Balance meters (`used_is_remaining: true` — runpod, hyper) flip bar semantics:
   the fill is % remaining, not % used.
 - In CLI sqlite mode, `pct_1h_ago` is recomputed client-side from compact
   history.
-
-## Repo-root strays (not v3's; untouched on purpose)
-
-`usage-web-ui-v2/`, `digest.txt`, `.codegraph/`, and an untracked duplicate of
-the plan at `../usage-daemon/PLAN-python-rewrite.md` — the **v3 copy of the plan
-is the committed, authoritative one**.
+- **Never reference, read, or run commands against `/mnt/nas/projects/usage-old/`**
+  — that's the retired JS daemon + old web UI, moved out of this workspace
+  entirely and explicitly off-limits, including read-only `git status`/`ls`
+  style checks from a shared parent directory.
+- The systemd unit at `~/.config/systemd/user/usage-daemon.service` is NOT part
+  of either git repo — it's the live source of truth for what's actually
+  running. Check it directly (`systemctl --user cat usage-daemon.service`)
+  rather than assuming the repo's `usage-daemon.service` file matches.

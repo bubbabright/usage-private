@@ -1,8 +1,28 @@
 """Groq usage provider plugin (console session + activity API).
 
-Uses Firefox cookies (stytch_session_jwt or stytch_session) to access the
-Groq platform activity API for real usage metrics, replacing the old approach
-of making fake chat completions to read rate-limit headers.
+Authenticates through the user's Firefox session (stytch_session_jwt or
+stytch_session) and reads real usage metrics from the Groq platform
+activity API. Replaces the old approach of making fake chat completions
+to read rate-limit headers.
+
+Auth flow:
+  1. Read stytch_session_jwt from Firefox cookies (direct JWT use).
+  2. Fallback: read stytch_session (opaque token), exchange via
+     Stytch B2B SDK (POST /sdk/v1/b2b/sessions/authenticate) for a
+     fresh JWT and org_id extracted from the JWT claim.
+
+Endpoints:
+  - GET https://api.groq.com/platform/v1/organizations/{orgId}/activity
+    Returns per-model, per-day usage: cost, tokens, requests.
+  - Stytch exchange: https://api.stytchb2b.groq.com/sdk/v1/b2b/sessions/authenticate
+
+Known free-tier daily request limits (configurable via model_limits):
+  - llama-3.1-8b-instant: 14,400/day
+  - whisper-large-v3: 1,000/day
+  - distil-whisper-large-v3: 1,000/day
+
+Configurable via GROQ_STYTCH_PUBLIC_TOKEN / GROQ_STYTCH_URL env vars
+to override the built-in Stytch credentials.
 """
 
 from __future__ import annotations
