@@ -1,33 +1,45 @@
-"""Groq usage provider plugin (port of src/providers/groq.js)."""
+"""Groq usage provider plugin (console session + activity API).
+
+Uses Firefox cookies (stytch_session_jwt or stytch_session) to access the
+Groq platform activity API for real usage metrics, replacing the old approach
+of making fake chat completions to read rate-limit headers.
+"""
 
 from __future__ import annotations
 
+import base64
 import datetime as _dt
 import json
 import math
-import re
 from typing import Any
 
+import httpx
+
+from ..cookiejar import cookie_header_for
 from ..errors import AuthExpiredError, RateLimitedError
 from ..httputil import create_client
 
-RPD_COLOR = "#CC79A7"
+COST_COLOR = "#D55E00"
+TOKENS_COLOR = "#0072B2"
+REQUESTS_COLOR = "#CC79A7"
+DAILY_LIMIT_COLOR = "#000000"
+
+GROQ_FREE_TIER_MODEL_LIMITS = {
+    "llama-3.1-8b-instant": 14400,
+    "whisper-large-v3": 1000,
+    "distil-whisper-large-v3": 1000,
+}
 
 ID = "groq"
 LABEL = "Groq"
 
-CHAT_URL = "https://api.groq.com/openai/v1/chat/completions"
+DEFAULT_STYTCH_PUBLIC_TOKEN = "stytch_live_637662822"
+DEFAULT_STYTCH_URL = "https://api.stytchb2b.groq.com"
+ACTIVITY_URL = "https://api.groq.com/platform/v1"
 USER_AGENT = "usage-daemon/0.1"
-DEFAULT_MODEL = "openai/gpt-oss-20b"
 
 
-def _clamp_pct(n):
-    if not isinstance(n, (int, float)) or isinstance(n, bool) or not math.isfinite(n):
-        return None
-    return max(0.0, min(100.0, float(n)))
-
-
-def _num(v):
+def _num(v) -> bool:
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
@@ -35,134 +47,413 @@ def _as_num(v) -> float | None:
     return float(v) if _num(v) else None
 
 
-def parse_duration(value):
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
-        return float(value)
-    if not isinstance(value, str) or not value:
+def _org_id_from_jwt(jwt: str) -> str | None:
+    try:
+        parts = jwt.split(".")
+        if len(parts) != 3:
+            return None
+        payload = parts[1]
+        padding = 4 - len(payload) % 4
+        if padding != 4:
+            payload += "=" * padding
+        decoded = base64.urlsafe_b64decode(payload)
+        claims = json.loads(decoded)
+        org_claim = claims.get("https://groq.com/organization")
+        if isinstance(org_claim, dict):
+            return org_claim.get("id")
+        return org_claim if isinstance(org_claim, str) else None
+    except Exception:
         return None
-    m = re.match(r"^(?:(\d+)h)?(?:(\d+)m)?(\d+(?:\.\d+)?)(ms|s)$", value)
-    if not m:
-        return None
-    hours = float(m.group(1) or 0)
-    minutes = float(m.group(2) or 0)
-    amount = float(m.group(3))
-    seconds = amount / 1000 if m.group(4) == "ms" else amount
-    return hours * 3600 + minutes * 60 + seconds
 
 
-def _iso_after(seconds: float) -> str:
-    dt = _dt.datetime.now(_dt.timezone.utc) + _dt.timedelta(seconds=seconds)
-    return dt.isoformat(timespec="milliseconds").replace("+00:00", "Z")
+async def _exchange_stytch_session(session_token: str, public_token: str, stytch_url: str, client: httpx.AsyncClient) -> tuple[str, str] | None:
+    """Exchange opaque stytch_session for fresh JWT and org_id."""
+    auth_header = base64.b64encode(f"{public_token}:{session_token}".encode()).decode()
+
+    headers = {
+        "Authorization": f"Basic {auth_header}",
+        "X-SDK-Client": "next-sdk",
+        "X-SDK-Parent-Host": "console.groq.com",
+        "Origin": "https://console.groq.com",
+        "User-Agent": USER_AGENT,
+        "Accept": "application/json",
+    }
+
+    try:
+        res = await client.post(
+            f"{stytch_url}/sdk/v1/b2b/sessions/authenticate",
+            headers=headers,
+        )
+        if res.status_code != 200:
+            return None
+        data = res.json()
+        session_jwt = data.get("session", {}).get("jwt")
+        if not session_jwt:
+            return None
+        org_id = _org_id_from_jwt(session_jwt)
+        if not org_id:
+            return None
+        return session_jwt, org_id
+    except Exception:
+        return None
+
+
+def _aggregate_activity_data(entries: list[dict]) -> dict:
+    """Aggregate activity entries into daily buckets for the last 7 days."""
+    now = _dt.datetime.now(_dt.timezone.utc)
+    end_ts = int(now.timestamp())
+    start_ts = end_ts - (7 * 24 * 3600)
+
+    model_stats: dict[str, dict] = {}
+
+    for entry in entries:
+        ts = entry.get("timestamp")
+        if not _num(ts):
+            continue
+        ts = int(ts)
+
+        if ts < start_ts:
+            continue
+
+        model = entry.get("model") or "unknown"
+        if model not in model_stats:
+            model_stats[model] = {
+                "context_tokens": 0,
+                "non_cached_tokens": 0,
+                "generated_tokens": 0,
+                "requests": 0,
+                "cost": 0.0,
+            }
+        model_stats[model]["context_tokens"] += _as_num(entry.get("n_context_tokens_total")) or 0
+        model_stats[model]["non_cached_tokens"] += _as_num(entry.get("n_non_cached_context_tokens_total")) or 0
+        model_stats[model]["generated_tokens"] += _as_num(entry.get("n_generated_tokens_total")) or 0
+        model_stats[model]["requests"] += _as_num(entry.get("num_requests")) or 0
+        model_stats[model]["cost"] += _as_num(entry.get("cost")) or 0.0
+
+    return {
+        "model_stats": model_stats,
+    }
+
+
+def _daily_limit_windows(model_stats: dict, model_limits: dict) -> list[dict]:
+    """Build daily request limit windows for models with known limits."""
+    windows = []
+    for model, stats in model_stats.items():
+        limit = model_limits.get(model)
+        if not limit:
+            continue
+        reqs = int(stats.get("requests", 0))
+        if reqs <= 0:
+            continue
+        pct = (100.0 * reqs) / limit
+        windows.append({
+            "id": f"daily_{model.replace('/', '_').replace('-', '_')}",
+            "label": f"{model} daily",
+            "letter": "D",
+            "pct": max(0.0, min(100.0, pct)),
+            "used": reqs,
+            "cap": limit,
+            "unit": "calls",
+            "resets_at": _start_of_next_day(),
+            "color": DAILY_LIMIT_COLOR,
+            "will_deplete": False,
+        })
+    return windows
+
+
+def _daily_limit_windows_from_data(data: dict, model_limits: dict) -> list[dict]:
+    """Build daily limit windows from raw activity data."""
+    entries = data.get("data", []) if isinstance(data, dict) else []
+    if not isinstance(entries, list):
+        entries = []
+    agg = _aggregate_activity_data(entries)
+    return _daily_limit_windows(agg.get("model_stats", {}), model_limits)
+
+
+def _total_cost(data: dict) -> float:
+    return sum(m.get("cost", 0) for m in data.get("model_stats", {}).values())
+
+
+def _total_generated_tokens(data: dict) -> int:
+    total = 0
+    for m in data.get("model_stats", {}).values():
+        total += int(m.get("generated_tokens", 0))
+    return total
+
+
+def _total_context_tokens(data: dict) -> int:
+    total = 0
+    for m in data.get("model_stats", {}).values():
+        total += int(m.get("non_cached_tokens", 0))
+    return total
+
+
+def _total_requests(data: dict) -> int:
+    total = 0
+    for m in data.get("model_stats", {}).values():
+        total += int(m.get("requests", 0))
+    return total
+
+
+def _start_of_next_day() -> str:
+    now = _dt.datetime.now(_dt.timezone.utc)
+    next_day = now + _dt.timedelta(days=1)
+    reset_time = _dt.datetime(next_day.year, next_day.month, next_day.day, tzinfo=_dt.timezone.utc)
+    return reset_time.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def parse(raw) -> dict:
     try:
-        env = json.loads(raw) if isinstance(raw, str) else raw
+        data = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
-        raise AuthExpiredError("unparseable groq envelope")
-    if not isinstance(env, dict):
-        raise AuthExpiredError("unparseable groq envelope")
+        raise AuthExpiredError("unparseable Groq response")
+
+    entries = data.get("data", []) if isinstance(data, dict) else []
+    if not isinstance(entries, list):
+        entries = []
+
+    agg = _aggregate_activity_data(entries)
+    model_limits = data.get("_groq_model_limits") or {}
+
+    total_cost = _total_cost(agg)
+    total_tokens = _total_generated_tokens(agg)
+    total_context = _total_context_tokens(agg)
+    total_reqs = _total_requests(agg)
 
     windows = []
-    limit_req = env.get("limit_requests")
-    rem_req = env.get("remaining_requests")
-    limit_req_value = _as_num(limit_req)
-    rem_req_value = _as_num(rem_req)
-    if limit_req_value is not None and limit_req_value > 0 and rem_req_value is not None:
+
+    if total_cost > 0:
         windows.append({
-            "id": "daily_requests",
-            "label": "Requests/day",
-            "letter": "Rq",
-            "pct": _clamp_pct(100 * (1 - (rem_req_value / limit_req_value))),
-            "resets_at": env.get("reset_requests_at") or None,
-            "color": RPD_COLOR,
+            "id": "cost",
+            "label": "Cost",
+            "letter": "$",
+            "pct": None,
+            "used": total_cost,
+            "cap": None,
+            "unit": "USD",
+            "resets_at": _start_of_next_day(),
+            "color": COST_COLOR,
             "will_deplete": False,
         })
+
+    if total_tokens > 0:
+        windows.append({
+            "id": "generated_tokens",
+            "label": "Tokens",
+            "letter": "Tk",
+            "pct": None,
+            "used": total_tokens,
+            "cap": None,
+            "unit": "tokens",
+            "resets_at": _start_of_next_day(),
+            "color": TOKENS_COLOR,
+            "will_deplete": False,
+        })
+
+    if total_context > 0:
+        windows.append({
+            "id": "context_tokens",
+            "label": "Context",
+            "letter": "Ctx",
+            "pct": None,
+            "used": total_context,
+            "cap": None,
+            "unit": "tokens",
+            "resets_at": _start_of_next_day(),
+            "color": TOKENS_COLOR,
+            "will_deplete": False,
+        })
+
+    if total_reqs > 0:
+        windows.append({
+            "id": "requests",
+            "label": "Requests",
+            "letter": "Req",
+            "pct": None,
+            "used": total_reqs,
+            "cap": None,
+            "unit": "calls",
+            "resets_at": _start_of_next_day(),
+            "color": REQUESTS_COLOR,
+            "will_deplete": False,
+        })
+
+    for w in _daily_limit_windows(agg.get("model_stats", {}), model_limits):
+        windows.append(w)
+
     if not windows:
-        raise AuthExpiredError("no usable Groq rate-limit headers in envelope")
-    return {"tier": None, "windows": windows, "segments": []}
+        raise AuthExpiredError("no usable Groq activity data")
+
+    segments = []
+    for model, stats in agg.get("model_stats", {}).items():
+        model_cost = stats.get("cost", 0)
+        if _num(model_cost) and total_cost > 0:
+            pct = (100.0 * model_cost) / total_cost
+            segments.append({
+                "label": model,
+                "value": model_cost,
+                "pct": pct,
+                "color": None,
+            })
+
+    result = {
+        "tier": None,
+        "windows": windows,
+        "segments": segments,
+        "_groq": {
+            "total_cost": total_cost,
+            "total_tokens": total_tokens,
+            "total_context": total_context,
+            "total_requests": total_reqs,
+            "models": list(agg.get("model_stats", {}).keys()),
+        },
+    }
+    return result
 
 
 def create() -> dict:
-    state: dict[str, Any] = {"api_key": None, "model": DEFAULT_MODEL}
+    state: dict[str, Any] = {
+        "stytch_public_token": DEFAULT_STYTCH_PUBLIC_TOKEN,
+        "stytch_url": DEFAULT_STYTCH_URL,
+        "model_limits": {},
+    }
 
     def config() -> dict:
         return {
             "id": ID,
             "label": LABEL,
             "usageUrl": "https://console.groq.com/usage",
-            "auth": {"kind": "token"},
-            "windows": [{"id": "daily_requests", "label": "Requests/day", "color": RPD_COLOR}],
+            "auth": {"kind": "cookie"},
+            "windows": [
+                {"id": "cost", "label": "Cost", "color": COST_COLOR},
+                {"id": "generated_tokens", "label": "Tokens", "color": TOKENS_COLOR},
+                {"id": "context_tokens", "label": "Context", "color": TOKENS_COLOR},
+                {"id": "requests", "label": "Requests", "color": REQUESTS_COLOR},
+            ],
             "tiers": [],
+            "model_limits": {**GROQ_FREE_TIER_MODEL_LIMITS, **state.get("model_limits", {})},
         }
 
     def configure(cfg: dict | None = None) -> None:
         cfg = cfg or {}
         if "api_key" in cfg:
             state["api_key"] = str(cfg["api_key"]).strip() if cfg["api_key"] else None
-        if cfg.get("model"):
-            state["model"] = str(cfg["model"]).strip()
+        if "model" in cfg:
+            state["model"] = str(cfg["model"]).strip() if cfg["model"] else None
+        if "cookie" in cfg:
+            state["cookie"] = str(cfg["cookie"]).strip() if cfg["cookie"] else None
+        if "stytch_public_token" in cfg:
+            state["stytch_public_token"] = str(cfg["stytch_public_token"]).strip() if cfg["stytch_public_token"] else None
+        if "stytch_url" in cfg:
+            state["stytch_url"] = str(cfg["stytch_url"]).strip() if cfg["stytch_url"] else None
+        if "model_limits" in cfg and isinstance(cfg["model_limits"], dict):
+            # Merge custom model limits with defaults
+            state.setdefault("model_limits", {}).update(cfg["model_limits"])
+        elif "model_limits" not in state:
+            state["model_limits"] = {}
 
     async def set_auth(payload: str) -> None:
         state["api_key"] = str(payload or "").strip() or None
 
-    async def fetch() -> str:
-        if not state["api_key"]:
-            raise AuthExpiredError("no Groq API key configured")
-        c = create_client()
+    async def _get_jwt_from_cookie() -> tuple[str, str] | None:
+        cookie = state.get("cookie") or cookie_header_for("groq.com")["header"]
+        if not cookie:
+            return None
+
+        cookies = {}
+        for item in cookie.split("; "):
+            if "=" in item:
+                k, v = item.split("=", 1)
+                cookies[k] = v
+
+        jwt = cookies.get("stytch_session_jwt")
+        if jwt:
+            org_id = _org_id_from_jwt(jwt)
+            if org_id:
+                return jwt, org_id
+
+        session_token = cookies.get("stytch_session")
+        if not session_token:
+            return None
+
+        client = create_client()
         try:
-            res = await c.post(
-                CHAT_URL,
+            result = await _exchange_stytch_session(
+                session_token,
+                state["stytch_public_token"],
+                state["stytch_url"],
+                client,
+            )
+            return result
+        finally:
+            await client.aclose()
+
+    async def fetch() -> str:
+        jwt = None
+        org_id = None
+
+        cookie_result = await _get_jwt_from_cookie()
+        if cookie_result:
+            jwt, org_id = cookie_result
+
+        if not jwt or not org_id:
+            raise AuthExpiredError("no Groq browser session cookie (stytch_session or stytch_session_jwt) found in Firefox")
+
+        client = create_client()
+        try:
+            now = int(_dt.datetime.now(_dt.timezone.utc).timestamp())
+            one_week_ago = now - (7 * 24 * 3600)
+
+            res = await client.get(
+                f"{ACTIVITY_URL}/organizations/{org_id}/activity",
                 headers={
-                    "Authorization": f"Bearer {state['api_key']}",
-                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {jwt}",
+                    "groq-organization": org_id,
                     "User-Agent": USER_AGENT,
                     "Accept": "application/json",
                 },
-                content=json.dumps({
-                    "model": state["model"],
-                    "messages": [{"role": "user", "content": "hi"}],
-                    "max_tokens": 1,
-                }),
+                params={
+                    "start_date": one_week_ago,
+                    "end_date": now,
+                },
             )
-            _ = res.text
-        finally:
-            await c.aclose()
-        if res.status_code in (401, 403):
-            raise AuthExpiredError()
-        if res.status_code == 429:
-            ra = res.headers.get("retry-after")
-            raise RateLimitedError(int(ra) if ra and ra.isdigit() else None)
-        if res.status_code >= 400:
-            raise RuntimeError(f"api.groq.com HTTP {res.status_code}")
 
-        limit_requests = res.headers.get("x-ratelimit-limit-requests")
-        remaining_requests = res.headers.get("x-ratelimit-remaining-requests")
-        reset_requests = parse_duration(res.headers.get("x-ratelimit-reset-requests"))
-        try:
-            limit_requests = float(limit_requests) if limit_requests is not None else None
-        except ValueError:
-            limit_requests = None
-        try:
-            remaining_requests = float(remaining_requests) if remaining_requests is not None else None
-        except ValueError:
-            remaining_requests = None
-        envelope = {
-            "limit_requests": limit_requests if _num(limit_requests) else None,
-            "remaining_requests": remaining_requests if _num(remaining_requests) else None,
-            "reset_requests_at": _iso_after(reset_requests) if reset_requests is not None else None,
-        }
-        return json.dumps(envelope)
+            if res.status_code in (401, 403):
+                raise AuthExpiredError()
+            if res.status_code == 429:
+                ra = res.headers.get("retry-after")
+                raise RateLimitedError(int(ra) if ra and ra.isdigit() else None)
+            if res.status_code >= 400:
+                raise RuntimeError(f"api.groq.com HTTP {res.status_code}")
+
+            data = res.json()
+            entries = data.get("data", []) if isinstance(data, dict) else []
+            agg = _aggregate_activity_data(entries)
+            model_limits = {**GROQ_FREE_TIER_MODEL_LIMITS, **state.get("model_limits", {})}
+            data["_groq_model_limits"] = model_limits
+            raw_json = json.dumps(data)
+            state["last_agg"] = agg
+            state["last_raw"] = raw_json
+            return raw_json
+
+        finally:
+            await client.aclose()
+
+    def interval_seconds() -> int:
+        return 900
+
+    def meta() -> dict:
+        return {}
 
     return {
         "id": ID,
         "label": LABEL,
-        "auth": {"kind": "token"},
+        "auth": {"kind": "cookie"},
         "config": config,
         "configure": configure,
         "set_auth": set_auth,
         "fetch": fetch,
-        "interval_seconds": lambda: 900,
-        "meta": dict,
+        "interval_seconds": interval_seconds,
+        "meta": meta,
         "parse": parse,
     }
