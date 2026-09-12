@@ -1,11 +1,23 @@
-"""Context7 usage provider plugin (port of src/providers/context7.js)."""
+"""Context7 usage provider plugin (port of src/providers/context7.js, plus a
+Clerk session-refresh step).
+
+Context7 authenticates the dashboard with Clerk, which issues its
+``__session`` JWT with only a ~60-second lifetime and re-issues it while the
+dashboard tab is open. A cookie pulled from Firefox on a poll schedule is
+therefore almost always expired, so ``fetch()`` mints a fresh session JWT via
+Clerk's frontend token endpoint (``POST /v1/client/sessions/<sid>/tokens``,
+the same call Clerk's SDK makes) before hitting the stats API.
+"""
 
 from __future__ import annotations
 
+import base64
 import json
 import math
 from typing import Any
 from urllib.parse import quote
+
+import httpx
 
 from ..errors import AuthExpiredError, RateLimitedError
 from ..httputil import create_client
@@ -16,7 +28,68 @@ ID = "context7"
 LABEL = "Context7"
 
 API_URL = "https://context7.com"
+FRONTEND_URL = "https://clerk.context7.com"
 USER_AGENT = "usage-daemon/0.1"
+
+
+def _jwt_payload(jwt: str) -> dict | None:
+    try:
+        seg = jwt.split(".")[1]
+        seg += "=" * (-len(seg) % 4)
+        data = json.loads(base64.urlsafe_b64decode(seg))
+    except Exception:
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def _session_id_from_jwt(jwt: str) -> str | None:
+    payload = _jwt_payload(jwt)
+    sid = payload.get("sid") if payload else None
+    return sid if isinstance(sid, str) and sid else None
+
+
+def _session_jwt_from_cookie_header(header: str) -> str | None:
+    for part in header.split(";"):
+        part = part.strip()
+        if not part.lower().startswith("__session="):
+            continue
+        value = part.split("=", 1)[1].strip().strip('"')
+        return value or None
+    return None
+
+
+async def _clerk_refresh_jwt(cookie_header: str, client: httpx.AsyncClient) -> str | None:
+    """Mint a fresh Clerk session JWT from the browser's session cookies.
+
+    Clerk's ``__session`` JWT lives ~60s, so we exchange the stored cookies
+    (which identify the live session) for a brand-new JWT, then use it as the
+    Bearer token against the Context7 API. Returns None when the cookie set
+    has no usable Clerk session.
+    """
+    session_jwt = _session_jwt_from_cookie_header(cookie_header)
+    if not session_jwt:
+        return None
+    sid = _session_id_from_jwt(session_jwt)
+    if not sid:
+        return None
+    try:
+        res = await client.post(
+            f"{FRONTEND_URL}/v1/client/sessions/{sid}/tokens",
+            headers={
+                "Origin": "https://context7.com",
+                "Referer": "https://context7.com/dashboard",
+                "Cookie": cookie_header,
+                "Content-Type": "application/json",
+                "User-Agent": USER_AGENT,
+            },
+            json={},
+        )
+        if res.status_code != 200:
+            return None
+        jwt = res.json().get("jwt")
+    except Exception:
+        return None
+    return jwt if isinstance(jwt, str) and jwt else None
 
 
 def _clamp_pct(n):
@@ -96,10 +169,16 @@ def create() -> dict:
             raise RuntimeError("context7: no team_id configured (see config.example.toml)")
         c = create_client()
         try:
+            jwt = await _clerk_refresh_jwt(state["cookie"], c)
+            if not jwt:
+                raise AuthExpiredError(
+                    "context7: could not refresh Clerk session — log in to context7.com "
+                    "in Firefox and refresh the cookie"
+                )
             res = await c.get(
                 f"{API_URL}/api/dashboard/stats/{quote(state['team_id'], safe='')}",
                 headers={
-                    "Cookie": state["cookie"],
+                    "Authorization": f"Bearer {jwt}",
                     "User-Agent": USER_AGENT,
                     "Accept": "application/json",
                     "Referer": "https://context7.com/dashboard",
@@ -108,7 +187,7 @@ def create() -> dict:
         finally:
             await c.aclose()
         if res.status_code in (401, 403):
-            raise AuthExpiredError()
+            raise AuthExpiredError("context7 session logged out — log in at context7.com and refresh the cookie")
         if res.status_code == 429:
             ra = res.headers.get("retry-after")
             raise RateLimitedError(int(ra) if ra and ra.isdigit() else None)
