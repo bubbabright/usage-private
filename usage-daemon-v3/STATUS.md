@@ -1,6 +1,6 @@
 # STATUS — usage-daemon-v3
 
-> Session-continuity snapshot. Last updated: **2026-09-09** (late session).
+> Session-continuity snapshot. Last updated: **2026-09-12**.
 > Fresh session? Read `PLAN-python-rewrite.md` first (architecture, locked
 > decisions, §4 provider data models, §3 two-SQLite storage), then this file.
 
@@ -24,7 +24,7 @@ outside this repo). `/mnt/nas/projects/usage/` now contains only
 - Ported (21): `ollama claude hyper cohere · abacus llm7 github runpod · mistral
   grok opencode-go openrouter cloudflare deepgram groq firecrawl serpapi tavily
   context7 consensus elevenlabs`
-- Current validation: `uv run pytest -q` → **270 passed, 1 warning**
+- Current validation: `uv run pytest -q` → **300 passed, 1 warning**
 - `usage_daemon/usage_urls.py` is still a stub (no JS ground truth to port from
   anymore — it moved to `usage-old/usage-daemon/src/usage-urls.js` if still needed).
 
@@ -132,7 +132,8 @@ real usage from the platform activity API:
   (`llama-3.1-8b-instant` = 14,400/day, whisper models = 1,000/day)
 - `model_limits` config override for custom models
 - Live smoke test passed against the real API (13 models, ~1,150 requests,
-  ~$0.05 over 7 days)
+  ~$0.05 over 7 days — the $0.05 figure is monthly-scale; the query window
+  was later corrected to 30 days, see `docs/groq.md`)
 
 Changed: `usage-daemon-v3/usage_daemon/providers/groq.py`,
 `usage-daemon-v3/tests/test_providers_groq.py`. Committed as `7f167fa`.
@@ -176,6 +177,71 @@ Changed: `usage-daemon-v3/usage_daemon/providers/groq.py`,
    guard correctly suppresses the window there, so it may not render for
    most/any real accounts today, but is kept since the field isn't
    documented as gone entirely. Full writeup: `docs/openrouter.md` (new).
+
+## Session 2026-09-11/12 — groq rework, context7 Clerk refresh, burn tooling
+
+Full writeups: `docs/groq.md`, `docs/context7.md` (new). Summary:
+
+1. **groq.py reworked against live API + CodexBar reference**:
+   - The hardcoded Stytch token (`stytch_live_637662822`) was rejected by
+     Stytch with `invalid_public_token_id` (format invalid) — verified with
+     a live probe — so the opaque `stytch_session` fallback could never
+     auth. Replaced with Groq's real publishable console token
+     (`public-token-live-…`, recovered from the console bundle and confirmed
+     in CodexBar's `GroqConsoleStytch.swift`); overridable via
+     `GROQ_STYTCH_PUBLIC_TOKEN` / `stytch_public_token` (env vars are now
+     actually read — they never were before).
+   - Auth order fixed: exchange the long-lived `stytch_session` first,
+     `stytch_session_jwt` only as fallback (was inverted — a stale
+     short-lived JWT was tried first). Exchange request now matches the
+     console SPA: JSON body `{"session_token", "session_duration_minutes":
+     30}`, base64 Stytch SDK telemetry `X-SDK-Client`, and parses the
+     proxy's `data.session_jwt` shape (the old code read `session.jwt`,
+     which the proxy never returns).
+   - Time window fixed: 7 days → **30 days** (`ACTIVITY_HISTORY_DAYS`),
+     start of UTC day −29d through end of today, matching the console
+     dashboard (user-confirmed: the ~$0.05 smoke figure was monthly, and
+     live rows reconcile exactly — 4,907 requests / $0.41 over 30 days).
+   - `_aggregate_activity_data` tracks `requests_today` / `tokens_today`
+     (current UTC day) per model; daily gauges compare today's usage to the
+     per-day caps instead of pinning at 100% on period totals.
+   - Daily limits from the official rate-limits docs (2026-09): RPD table
+     corrected (whisper 2,000/day, gpt-oss/qwen 1,000/day, compound 250,
+     orpheus 100, prompt-guard 14,400) + new TPD table with per-model
+     `daily_tokens_<model>` windows (cached tokens excluded per docs).
+     Both tables config-overridable (`model_limits`, `model_token_limits`).
+   - Monthly windows labeled "(30d)" with `resets_at` null (they're sliding
+     totals; the end-of-day countdown was misleading); daily gauges keep
+     the midnight countdown — user-visible delineation between the two.
+   - Empty-but-valid activity now raises `ProviderError`, not
+     `AuthExpiredError` (an idle-but-healthy session must not trigger
+     cookie self-heal / "re-auth needed").
+   - Dead state removed (`last_agg`/`last_raw` were written, never read).
+2. **context7.py: Clerk session refresh** — the bug: Context7's Clerk
+   `__session` JWT lives ~60s and is only re-issued while the dashboard tab
+   is open, so a Firefox cookie pulled on a 300s poll is always expired →
+   401 → `auth_expired` even with a "fresh" cookie (right account, wrong
+   credential lifetime). `fetch()` now decodes the `sid` from the stored
+   `__session` JWT and mints a fresh JWT via
+   `POST https://clerk.context7.com/v1/client/sessions/<sid>/tokens`
+   (browser cookies + `Origin` only — Clerk rejects Origin+Authorization
+   together; the publishable key is not needed), then calls the stats API
+   with `Authorization: Bearer`. Verified live end-to-end. Clear
+   `AuthExpiredError` messages when the session itself is revoked.
+3. **usage-burn** — new `usage-burn` console script (`cli.burn_main`) +
+   `POST /usage/:provider/burn` endpoint (gated by
+   `[control] allow_control = true`) + `Runner.burn()`: injects fake usage
+   into the current snapshot only (`'5%'` of cap, or a raw number; window
+   selectable), so display/polling can be tested without hammering real
+   APIs. The next real poll overwrites it; no history write.
+4. **web-ui: pie-chart overview** — `PieCharts.tsx` (Recharts donuts +
+   legend/tooltip) and `OverviewBoardPie.tsx`, toggled from the bar board
+   via a session-scoped Bars/Pies view-mode toggle in `App.tsx`.
+   `usage-webui.service` unit file added to the repo.
+5. **Per-model daily windows are history-visible**: the daily gauges carry
+   numeric `pct`, so they are historized and headlined like USD windows.
+
+
 
 ## Open items (from `/code-review`, 2026-09-09 — NONE fixed yet)
 
