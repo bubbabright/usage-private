@@ -59,20 +59,24 @@ FREE_MODEL_RPD_NO_CREDITS = 50
 
 
 def _clamp_pct(n):
+    """Clamp a finite 0..100 percentage; None-safe (bools/non-numbers pass through as None)."""
     if not isinstance(n, (int, float)) or isinstance(n, bool) or not math.isfinite(n):
         return None
     return max(0.0, min(100.0, float(n)))
 
 
 def _num(v):
+    """True for finite real numbers only — bools and NaN/inf are rejected (API sends counts as strings)."""
     return isinstance(v, (int, float)) and not isinstance(v, bool) and math.isfinite(v)
 
 
 def _as_num(v) -> float | None:
+    """Coerce to float when finite, else None — the single funnel for every numeric field in parse()."""
     return float(v) if _num(v) else None
 
 
 def _usage_for_reset(key_data: dict) -> float | None:
+    """Usage matching the key's limit_reset window: daily/weekly/monthly -> usage_daily/_weekly/_monthly."""
     reset = key_data.get("limit_reset")
     if not isinstance(reset, str) or not reset:
         return None
@@ -155,6 +159,18 @@ def _requests_from_analytics(payload) -> float | None:
 
 
 def parse(raw) -> dict:
+    """Pure function of a combined envelope string — no network/fs, unit-tests against fixtures.
+
+    Envelope (assembled by fetch()): {"key": <GET /api/v1/key text|null>,
+    "credits": <GET /api/v1/credits text|null>, "analytics": <POST
+    /analytics/query text|null>}. Sub-payloads may be JSON text or dicts and
+    are parsed independently — any one 403ing/missing just omits its windows
+    (management-key degrade), while an unparseable envelope raises
+    AuthExpiredError. Emits windows: key spend (pct/cap + rolling usage keyed
+    to limit_reset), rate_limit (informational, sentinel-guarded), and
+    free_requests (analytics used count vs derived daily cap); everything
+    else lands in meta under _openrouter (see docs/openrouter.md).
+    """
     try:
         envelope = json.loads(raw) if isinstance(raw, str) else raw
     except Exception:
