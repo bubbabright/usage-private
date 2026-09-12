@@ -407,5 +407,78 @@ def main(argv: list[str] | None = None) -> int:
     return 0
 
 
+# --- usage-burn: inject fake usage on a provider, for testing --------------
+
+
+def burn_main(argv: list[str] | None = None) -> int:
+    import httpx
+
+    parser = argparse.ArgumentParser(
+        prog="usage-burn",
+        description="Artificially burn usage on a provider (tests the daemon's live display/polling).",
+    )
+    parser.add_argument("provider", nargs="?", default=None,
+                        help="provider id (omit to pick from a list)")
+    parser.add_argument("amount", nargs="?", default=None,
+                        help="e.g. '5%%' (needs a capped window) or a raw number, e.g. '1000'")
+    parser.add_argument("--window", default=None, help="window id to burn (default: the primary window)")
+    parser.add_argument("--url", default=None, help="live daemon base URL (default http://127.0.0.1:<port>)")
+    parser.add_argument("--port", type=int, default=None, help="live daemon port (default: config.toml port or 8787)")
+    args = parser.parse_args(argv)
+
+    port = args.port or _config_port() or 8787
+    url = (args.url or f"http://127.0.0.1:{port}").rstrip("/")
+
+    rows = _fetch_live_rows(url)
+    if rows is None:
+        print(f"usage-burn: daemon not reachable at {url}", file=sys.stderr)
+        return 1
+
+    provider = args.provider
+    if not provider:
+        for i, r in enumerate(rows, 1):
+            label = r.get("provider")
+            print(f"  {i}. {label}")
+        choice = input("select a provider (number or id): ").strip()
+        if choice.isdigit() and 1 <= int(choice) <= len(rows):
+            provider = rows[int(choice) - 1].get("provider")
+        else:
+            provider = choice
+    if not any(r.get("provider") == provider for r in rows):
+        print(f"usage-burn: unknown provider: {provider}", file=sys.stderr)
+        return 1
+
+    amount = args.amount
+    if not amount:
+        amount = input(f"amount to burn on {provider} (e.g. '5%' or '1000'): ").strip()
+    if not amount:
+        print("usage-burn: empty amount", file=sys.stderr)
+        return 1
+
+    try:
+        res = httpx.post(
+            f"{url}/usage/{provider}/burn",
+            json={"amount": amount, "window": args.window},
+            timeout=LIVE_TIMEOUT_S,
+            trust_env=False,
+        )
+    except Exception as e:
+        print(f"usage-burn: request failed: {e}", file=sys.stderr)
+        return 1
+    if res.status_code != 200:
+        print(f"usage-burn: {res.status_code} {res.text}", file=sys.stderr)
+        return 1
+
+    snap = res.json()
+    color = sys.stdout.isatty() and not os.environ.get("NO_COLOR")
+    windows = snap.get("windows") or []
+    target = next((w for w in windows if w.get("id") == args.window), None) if args.window else (windows[0] if windows else None)
+    if target:
+        print(" ".join(_window_segments(target, color)))
+    print(f"burned {amount} on {provider} — real poll will overwrite this on its normal interval,"
+          f" or force it now: curl -X POST {url}/usage/{provider}/refresh")
+    return 0
+
+
 if __name__ == "__main__":
     sys.exit(main())

@@ -9,7 +9,7 @@ Routes (per the JS router; icon routes intentionally NOT ported — see plan §6
   GET   /usage/providers
   GET   /usage/headline
   GET   /usage/:provider/config | current | history
-  POST  /usage/:provider/refresh | cookie | cookie/from-firefox | auth
+  POST  /usage/:provider/refresh | cookie | cookie/from-firefox | auth | burn
   DELETE /usage/:provider/cookie | auth
   GET   /metrics
 """
@@ -286,6 +286,20 @@ class _Handler(BaseHTTPRequestHandler):
                 self._send_json(self._sync(runner.poll(name, manual=True)))
             except Exception as e2:
                 self._send_error(500, str(e2))
+            return
+
+        if rest and rest[0] == "burn" and method == "POST":
+            control, _, _, _ = self._control_settings()
+            if control.get("allow_control") is not True:
+                self._send_error(403, "control disabled", hint="set [control] allow_control = true in config.toml")
+                return
+            body = self._read_body()
+            amount = body if isinstance(body, str) else (body.get("amount") if isinstance(body, dict) else None)
+            window = body.get("window") if isinstance(body, dict) else None
+            try:
+                self._send_json(runner.burn(name, amount, window))
+            except Exception as e2:
+                self._send_error(400, str(e2))
             return
 
         self._send_error(404, "not found")

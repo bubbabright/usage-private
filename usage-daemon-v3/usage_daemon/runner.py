@@ -8,6 +8,7 @@ per provider (fail-soft: errors mark stale, never blank).
 from __future__ import annotations
 
 import asyncio
+import copy
 import random
 import time as _time
 
@@ -46,6 +47,14 @@ def next_delay(status: str, failures: int, retry_after, base_ms: int) -> int:
     n = max(0, (failures if failures is not None else 1) - 1)
     exp = base_ms * (2 ** min(n, 12))
     return min(max(exp, base_ms), MAX_BACKOFF_MS)
+
+
+def _parse_burn_amount(amount_str: str) -> float:
+    """Strip an optional trailing '%' and parse the number. Caller decides what the number means."""
+    s = str(amount_str or "").strip()
+    if not s:
+        raise ValueError("empty amount")
+    return float(s[:-1] if s.endswith("%") else s)
 
 
 def jitter(ms: int) -> int:
@@ -212,6 +221,79 @@ class Runner:
 
     async def get_history(self, name: str) -> list[dict]:
         return await self.store.async_read(name)
+
+    # --- burn (artificially inject usage, for testing display/polling) ---
+    def _empty_snapshot(self, name: str) -> dict:
+        """A zeroed snapshot for a provider with no real poll yet, so it can still be burned."""
+        e = self._entry(name)
+        cfg = (e["provider"].get("config") or (lambda: {}))() or {}
+        windows = [
+            {
+                "id": w.get("id"),
+                "label": w.get("label", w.get("id")),
+                "letter": None,
+                "pct": None,
+                "used": 0,
+                "used_is_remaining": False,
+                "cap": None,
+                "unit": None,
+                "color": w.get("color"),
+                "resets_at": None,
+            }
+            for w in cfg.get("windows", [])
+        ]
+        return {
+            "provider": name,
+            "t": now_ms(),
+            "tier": None,
+            "status": STATUS["OK"],
+            "stale": False,
+            "windows": windows,
+            "segments": [],
+        }
+
+    def burn(self, name: str, amount_str: str, window_id: str | None = None) -> dict:
+        """Immediately inject fake usage into a provider's current snapshot.
+
+        Only ever touches `self.current[name]` — the same field a real poll
+        unconditionally overwrites (`_do_poll`) — so the very next real poll
+        (on schedule, or via `poll(name, manual=True)`) naturally replaces it
+        with real data. No history/store write, no scheduler change.
+        """
+        self._entry(name)
+        snap = copy.deepcopy(self.current.get(name)) or self._empty_snapshot(name)
+        windows = snap.get("windows") or []
+        if window_id:
+            target = next((w for w in windows if w.get("id") == window_id), None)
+            if target is None:
+                raise ValueError(f"unknown window: {window_id}")
+        else:
+            target = windows[0] if windows else None
+        if target is None:
+            raise ValueError(f"no window to burn on {name}")
+
+        delta = _parse_burn_amount(amount_str)
+        is_percent = str(amount_str).strip().endswith("%")
+        cap = target.get("cap")
+        has_cap = isinstance(cap, (int, float)) and cap > 0
+
+        if has_cap:
+            amount = (delta / 100.0 * cap) if is_percent else delta
+            if target.get("used_is_remaining"):
+                target["used"] = max(0.0, (target.get("used") or 0) - amount)
+            else:
+                target["used"] = (target.get("used") or 0) + amount
+            used_for_pct = (cap - target["used"]) if target.get("used_is_remaining") else target["used"]
+            target["pct"] = max(0.0, min(100.0, 100.0 * used_for_pct / cap))
+        elif isinstance(target.get("pct"), (int, float)):
+            # No cap to anchor units to: both "5" and "5%" mean "+5 percentage points".
+            target["pct"] = max(0.0, min(100.0, target["pct"] + delta))
+        else:
+            target["used"] = (target.get("used") or 0) + delta
+
+        snap["windows"] = windows
+        self.current[name] = snap
+        return snap
 
     # --- schedule ---
     def start(self) -> None:

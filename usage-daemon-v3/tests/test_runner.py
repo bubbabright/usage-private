@@ -307,3 +307,120 @@ def test_set_auth_payload_without_auth_file_is_memory_only():
         assert snap["status"] == "ok"  # still works live, just not persisted
 
     asyncio.run(main())
+
+
+# --- burn: artificial usage injection ---
+
+
+def _capped_windows_provider():
+    async def fetch():
+        return "ok"
+
+    def parse(raw):
+        return {
+            "tier": None,
+            "windows": [
+                {"id": "cap_win", "label": "Cap", "pct": 10, "used": 10, "cap": 100,
+                 "used_is_remaining": False, "unit": "USD", "resets_at": None, "color": "#000"},
+                {"id": "bal_win", "label": "Balance", "pct": None, "used": 50, "cap": 100,
+                 "used_is_remaining": True, "unit": "USD", "resets_at": None, "color": "#111"},
+            ],
+            "segments": [],
+        }
+
+    return {
+        "id": "burnable", "label": "Burnable", "auth": {"kind": "token"},
+        "fetch": fetch, "parse": parse,
+        "config": lambda: {"windows": [{"id": "cap_win", "label": "Cap", "color": "#000"},
+                                        {"id": "bal_win", "label": "Balance", "color": "#111"}]},
+    }
+
+
+def test_burn_raw_amount_increases_used_and_pct():
+    async def main():
+        runner = Runner()
+        runner.add(_capped_windows_provider())
+        await runner.poll("burnable")
+        snap = runner.burn("burnable", "20")
+        w = snap["windows"][0]
+        assert w["used"] == 30
+        assert w["pct"] == 30
+
+    asyncio.run(main())
+
+
+def test_burn_percent_amount_uses_cap():
+    async def main():
+        runner = Runner()
+        runner.add(_capped_windows_provider())
+        await runner.poll("burnable")
+        snap = runner.burn("burnable", "5%")
+        w = snap["windows"][0]
+        assert w["used"] == 15  # 10 + 5% of cap(100)
+        assert w["pct"] == 15
+
+    asyncio.run(main())
+
+
+def test_burn_without_cap_adjusts_pct_directly():
+    """No cap to anchor units to: both '5' and '5%' just add 5 percentage points."""
+
+    async def main():
+        runner = Runner()
+        async def fetch():
+            return "ok"
+
+        runner.add({
+            "id": "uncapped", "label": "Uncapped", "auth": {"kind": "token"},
+            "fetch": fetch,
+            "parse": lambda raw: {"tier": None, "windows": [
+                {"id": "w", "label": "W", "pct": 10, "used": None, "cap": None,
+                 "used_is_remaining": False, "resets_at": None, "color": "#000"}], "segments": []},
+            "config": lambda: {"windows": [{"id": "w", "label": "W", "color": "#000"}]},
+        })
+        await runner.poll("uncapped")
+        snap = runner.burn("uncapped", "5%")
+        assert snap["windows"][0]["pct"] == 15
+        snap2 = runner.burn("uncapped", "5")
+        assert snap2["windows"][0]["pct"] == 20
+
+    asyncio.run(main())
+
+
+def test_burn_used_is_remaining_window_decreases_used():
+    async def main():
+        runner = Runner()
+        runner.add(_capped_windows_provider())
+        await runner.poll("burnable")
+        snap = runner.burn("burnable", "20", window_id="bal_win")
+        w = next(x for x in snap["windows"] if x["id"] == "bal_win")
+        assert w["used"] == 30  # 50 remaining - 20 burned
+        assert w["pct"] == 70  # (100-30)/100 consumed
+
+    asyncio.run(main())
+
+
+def test_burn_unknown_window_raises():
+    async def main():
+        runner = Runner()
+        runner.add(_capped_windows_provider())
+        await runner.poll("burnable")
+        with pytest.raises(ValueError, match="unknown window"):
+            runner.burn("burnable", "5", window_id="nope")
+
+    asyncio.run(main())
+
+
+def test_burn_unknown_provider_raises():
+    runner = Runner()
+    with pytest.raises(KeyError):
+        runner.burn("nope", "5")
+
+
+def test_burn_without_prior_snapshot_uses_config_windows():
+    runner = Runner()
+    runner.add(_capped_windows_provider())  # never polled — no self.current entry yet
+    snap = runner.burn("burnable", "5", window_id="cap_win")
+    w = next(x for x in snap["windows"] if x["id"] == "cap_win")
+    assert w["used"] == 5  # started at 0 (synthesized), cap unknown so pct stays None
+    assert w["pct"] is None

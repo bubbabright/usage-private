@@ -336,3 +336,28 @@ def test_refresh_triggers_manual_poll(api):
     assert r.status_code == 200
     assert r.json()["status"] == "ok"
 
+
+def test_burn_403_when_control_disabled(api):
+    r = httpx.post(f"{api.base}/usage/good/burn", json={"amount": "5"})
+    assert r.status_code == 403
+    assert r.json()["error"] == "control disabled"
+
+
+def test_burn_mutates_snapshot_when_control_enabled(api):
+    api.meta["control"] = {"allow_control": True, "service_name": "usage-daemon-v3"}
+    r = httpx.post(f"{api.base}/usage/good/burn", json={"amount": "8", "window": "w5h"})
+    assert r.status_code == 200
+    body = r.json()
+    assert body["windows"][0]["pct"] == 50  # good_state["pct"]=42 + 8
+
+    # visible immediately on /usage/providers without a real poll
+    r2 = httpx.get(f"{api.base}/usage/providers")
+    rows = {p["provider"]: p for p in r2.json()}
+    assert rows["good"]["windows"][0]["pct"] == 50
+
+
+def test_burn_400_on_unknown_window(api):
+    api.meta["control"] = {"allow_control": True, "service_name": "usage-daemon-v3"}
+    r = httpx.post(f"{api.base}/usage/good/burn", json={"amount": "5", "window": "nope"})
+    assert r.status_code == 400
+

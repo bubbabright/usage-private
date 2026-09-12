@@ -18,6 +18,7 @@ dev = ["pytest>=8"]
 usage-daemon = "usage_daemon.__main__:main"
 usage-daemon-v3 = "usage_daemon.__main__:main"
 usage = "usage_daemon.cli:main"
+usage-burn = "usage_daemon.cli:burn_main"
 
 [tool.setuptools.packages.find]
 include = ["usage_daemon*"]
