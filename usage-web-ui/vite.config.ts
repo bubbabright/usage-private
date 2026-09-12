@@ -8,7 +8,7 @@ export default defineConfig({
     host: '0.0.0.0',
     allowedHosts: ['usage.hoboguppy.com', 'localhost'],
     // dev-only: proxy API calls to the usage-daemon running locally.
-    proxy: { '/usage': 'http://127.0.0.1:8787' }
+    proxy: { '/usage': 'http://127.0.0.1:8788' }
   },
   build: {
     outDir: 'dist',

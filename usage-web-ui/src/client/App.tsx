@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ProviderSettingsModal } from './SettingsView';
+import { OverviewBoardPie } from './OverviewBoardPie';
 import { GlobalSettingsModal } from './GlobalSettingsModal';
 
 import claudeLogo from './assets/providers/claude.svg?raw';
@@ -290,11 +291,8 @@ function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list'
                 <span className={`text-sm font-medium shrink-0 tabular-nums ${exhausted ? 'text-red-400' : 'text-neutral-100'}`}>{valueText(w)}</span>
               </div>
               {hasBar && (
-                <div className="h-1 w-full bg-neutral-800 rounded-full overflow-hidden mt-0.5">
-                  <div
-                    className="h-full rounded-full"
-                    style={{ width: `${Math.min(100, w.pct)}%`, backgroundColor: exhausted ? '#ef4444' : windowColor(i, w.color) }}
-                  />
+                <div className="mt-0.5">
+                  <ActivityBar pct={w.pct} pct1hAgo={w.pct_1h_ago} color={exhausted ? '#ef4444' : windowColor(i, w.color)} />
                 </div>
               )}
             </div>
@@ -868,6 +866,7 @@ export function App() {
   const [settingsProvider, setSettingsProvider] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+  const [viewMode, setViewMode] = useState<'bar' | 'pie'>('bar');
 
   // Client-side visibility: hide a provider from the UI (sidebar, overview,
   // headline) WITHOUT touching the daemon — it keeps polling & recording. Just
@@ -1048,6 +1047,20 @@ export function App() {
         </button>
         <div className="relative flex items-center gap-2 shrink-0">
           <DaemonPanel onHealthChange={setDaemonHealth} />
+          <div className="flex items-center gap-1 bg-neutral-900 border border-neutral-800 rounded-lg p-0.5">
+            <button
+              onClick={() => setViewMode('bar')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === 'bar' ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+            >
+              Bars
+            </button>
+            <button
+              onClick={() => setViewMode('pie')}
+              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === 'pie' ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
+            >
+              Pies
+            </button>
+          </div>
           <button
             onClick={() => setShowGlobalSettings(true)}
             className="p-1.5 rounded-md text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 transition-colors shrink-0"
@@ -1123,7 +1136,11 @@ export function App() {
             <span>{error}</span>
           </div>
         ) : (
-          <OverviewBoardV3 providers={visibleProviders} cardGroup={cardGroup} onJump={jumpToProvider} showDepletion={globalSettings.showDepletion} fetchedAt={providersFetchedAt} />
+          viewMode === 'pie' ? (
+            <OverviewBoardPie providers={visibleProviders} cardGroup={cardGroup} onJump={jumpToProvider} fetchedAt={providersFetchedAt} />
+          ) : (
+            <OverviewBoardV3 providers={visibleProviders} cardGroup={cardGroup} onJump={jumpToProvider} showDepletion={globalSettings.showDepletion} fetchedAt={providersFetchedAt} />
+          )
         )}
       </main>
       </div>

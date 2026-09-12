@@ -13,8 +13,15 @@ each sidebar provider row. No Redux/Zustand, function components + hooks only.
 
 - `src/client/main.tsx` — ReactDOM bootstrap.
 - `src/client/App.tsx` — nearly all app logic: `HeadlineBar`, `DaemonPanel`,
-  `OverviewBoard`, `ProviderDashboard`, `ProviderIcon`. Read the inline comments here
-  first — they document non-obvious decisions (see Key design below).
+  `OverviewBoardV3`, `OverviewBoardPie`, `ProviderDashboard`, `ProviderIcon`.
+  `viewMode` state ('bar' | 'pie') toggles between `OverviewBoardV3` and
+  `OverviewBoardPie`. Read the inline comments here first — they document
+  non-obvious decisions (see Key design below).
+- `src/client/PieCharts.tsx` — pie/donut chart components (`ProviderPie`,
+  `ProviderPieMini`, `PieLegend`, `PieTooltip`) using Recharts.
+- `src/client/OverviewBoardPie.tsx` — pie-chart variant of the overview board
+  (`OverviewBoardPie`), mirror of `OverviewBoardV3` but with donut charts
+  instead of bars.
 - `src/client/SettingsView.tsx` — exports `ProviderSettingsModal`: one provider's auth
   form (cookie/oauth-file/token per `config.auth.kind`) + visibility toggle, as a modal
   over a backdrop. Not a page, not a list of all providers.
@@ -48,6 +55,9 @@ No test framework configured, no ESLint config in this repo.
 - Computes its own burn-rate/depletion projection client-side (`slope()` in `App.tsx`)
   rather than trusting a daemon-computed value — deliberate duplication, not an
   oversight.
+- View mode toggle (Bars/Pies) in the main content area switches between
+  `OverviewBoardV3` (bars) and `OverviewBoardPie` (donut charts). Toggle is session-scoped
+  (useState, not persisted) — a future iteration may add localStorage persistence.
 - `DaemonPanel` talks only to `/usage/health` and `/usage/admin/:action` — no coupling
   to daemon internals beyond that. Rendered in the top header (right side), not the sidebar.
   Compact horizontal layout: button labels hide on narrow screens (`hidden sm:inline`),

@@ -1,0 +1,21 @@
+[Unit]
+Description=usage-web-ui (Vite dev server, v3 config) – dashboard for usage-daemon on :8788
+# Repo: /mnt/nas/projects/usage/usage-web-ui
+After=network-online.target usage-daemon.service
+Wants=network-online.target
+# Prevent crash-loop rapid restarts
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/mnt/nas/projects/usage/usage-web-ui
+# vite.config.v3.ts: strictPort 5175, proxies /usage/* -> 127.0.0.1:8788.
+# Caddy reverse-proxies usage.hoboguppy.com -> 192.168.1.196:5175, so this
+# port must stay fixed.
+ExecStart=/home/daniel/.local/bin/npm run dev:v3
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=default.target
