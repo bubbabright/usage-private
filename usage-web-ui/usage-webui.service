@@ -13,7 +13,12 @@ WorkingDirectory=/mnt/nas/projects/usage/usage-web-ui
 # vite.config.v3.ts: strictPort 5175, proxies /usage/* -> 127.0.0.1:8788.
 # Caddy reverse-proxies usage.hoboguppy.com -> 192.168.1.196:5175, so this
 # port must stay fixed.
-ExecStart=/home/daniel/.local/bin/npm run dev:v3
+# NOTE: drive vite directly with an absolute node path instead of going through
+# `npm run dev:v3`. The npm symlink in ~/.local/bin pointed at a deleted Hermes
+# node install and broke the service with 203/EXEC; invoking vite via
+# node_modules/.bin/vite sidesteps that fragility entirely. Bump the node path
+# when nvm moves the active version (nvm has no stable 'current' symlink).
+ExecStart=/home/daniel/.nvm/versions/node/v24.20.0/bin/node node_modules/.bin/vite --config vite.config.v3.ts
 Restart=always
 RestartSec=5
 

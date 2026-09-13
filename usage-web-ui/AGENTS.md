@@ -46,6 +46,16 @@ npm run build   # -> dist/, static
 Change the proxy target in `vite.config.ts` if the daemon isn't on the default port.
 No test framework configured, no ESLint config in this repo.
 
+## systemd (production dev server)
+
+`usage-webui.service` (this repo, tracked) runs the v3 dev server on `:5175`:
+`systemctl --user start|status|restart usage-webui.service`. It drives vite
+directly via an absolute `node` path, not `npm run` — `~/.local/bin/npm` is a
+symlink that has pointed at a deleted Hermes node install and broken the unit
+with `203/EXEC` before. If the service fails to start, check that symlink and
+the node path in the unit; nvm has no stable `versions/node/current` symlink, so
+the version number in `ExecStart` must be bumped when the active version moves.
+
 ## Key design
 
 - **Independent of daemon internals by design** — talks only the documented `/usage/*`
