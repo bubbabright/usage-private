@@ -212,21 +212,24 @@ function HeadlineBar({ onJump, hidden, showDepletion }: { onJump: (provider: str
 // ("what is in use"). Feeds off the /usage/providers list, which now carries a
 // trimmed windows summary, so no per-provider fetch. Click a card to drill in.
 //
-// One compact card per non-'none' group (Support Services + Daily/Weekly/Monthly,
-// user-assigned via GlobalSettingsModal — see CardGroup/resolveGroup above). Grouped
-// providers stay separate providers — own polling, own history, own detail page — they
-// just don't each deserve a full plan card on the overview.
-//
-// Rows are compact by design: a name, the number, and a bar ONLY when there's a
-// cap to be a fraction of. A prepaid balance like deepgram's $197.73 has no
-// ceiling, so a bar there would be decoration pretending to be information.
-//
-// A provider's card membership (which ONE of Support/Daily/Weekly/Monthly it's filed
-// under) is a placement choice, not a filter on its data — a multi-window provider
-// (Claude: 5h+7d+monthly; Grok: weekly+monthly; Ollama: session+weekly; Opencode-go:
-// 5h+weekly+monthly) shows ALL of its windows stacked in its row wherever it's filed,
-// same as the full per-provider card does. Nothing gets dropped just because the
-// provider only has one card slot.
+/**
+ * A shared card for a group of providers (Support Services, Daily, Weekly, Monthly).
+ * Each provider gets its own row within the card, with the compact layout:
+ *   - Provider icon + name
+ *   - Primary value (with reset countdown if applicable)
+ *   - ActivityBar (list mode) or value only (grid mode)
+ *   - Secondary value (optional, e.g., remaining quota)
+ *
+ * Grouped providers remain independent — they have separate polling, history,
+ * and detail views — they simply share UI space on the overview board.
+ *
+ * @param title    - Group title (e.g., "Support Services", "Daily")
+ * @param subtitle - Optional subtitle (e.g., "metered APIs")
+ * @param icon     - React component for the group icon
+ * @param providers - Array of provider objects to display in this group
+ * @param onJump   - Callback when a provider row is clicked
+ * @param layout   - Either 'list' (vertical rows with bars) or 'grid' (compact values only)
+ */
 function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list' }: {
   title: string;
   subtitle?: string;
@@ -546,6 +549,20 @@ function resetText(w: any): string | null {
 // display of that same client-side refetch cycle, not a second timer.
 const BOARD_REFRESH_S = 30;
 
+/**
+ * Bar-mode overview board. Groups providers by user-assigned group
+ * (Support/Daily/Weekly/Monthly/'none'), renders each group in a
+ * GroupedCard. The 'none' group gets full-width cards with ActivityBar;
+ * grouped providers render compact rows inside their group card.
+ *
+ * Used when viewMode === 'bar'. Mirrored by OverviewBoardPie for pie mode.
+ *
+ * @param providers   - Full provider list from daemon
+ * @param cardGroup   - Map of provider id → CardGroup (user-assigned)
+ * @param onJump      - Callback to navigate to a provider detail
+ * @param showDepletion - Show depletion alert icons
+ * @param fetchedAt   - Timestamp of last data refresh (for "next refresh" countdown)
+ */
 function OverviewBoardV3({ providers, cardGroup, onJump, showDepletion, fetchedAt }: { providers: any[]; cardGroup: Record<string, CardGroup>; onJump: (p: string) => void; showDepletion: boolean; fetchedAt: number | null }) {
   const [, setTick] = useState(0);
   useEffect(() => {
