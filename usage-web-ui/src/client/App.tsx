@@ -2,11 +2,10 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   Activity, Bell, Server, Settings, History, TrendingUp, TrendingDown, AlertCircle, RefreshCw, Power, RotateCw, Play,
   Bot, Brain, Cloud, Terminal, Wrench, Zap, Mic, Scan, Search, Database, Cpu, HardDrive, Network, Shield, Key, Link, ExternalLink, BookOpen, GraduationCap, MessageSquare, AudioLines, Rocket, GitBranch,
-  Clock, Calendar, CalendarDays, CalendarClock, ChevronLeft, ChevronRight, ChevronDown
+  Clock, Calendar, CalendarDays, CalendarClock
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ProviderSettingsModal } from './SettingsView';
-import { OverviewBoardPie } from './OverviewBoardPie';
 import { GlobalSettingsModal } from './GlobalSettingsModal';
 
 import claudeLogo from './assets/providers/claude.svg?raw';
@@ -55,6 +54,29 @@ const DEFAULT_CARD_GROUPS: Record<string, CardGroup> = {
   cloudflare: 'daily', grok: 'daily', groq: 'daily', llm7: 'daily', openrouter: 'daily',
   claude: 'weekly', ollama: 'weekly', 'opencode-go': 'weekly',
   hyper: 'monthly', abacus: 'monthly', mistral: 'monthly', cohere: 'monthly',
+};
+
+// Built-in "where do I look at this provider" pages, opened by double-clicking its card.
+// Only ones known to be right; a provider with no entry and no user-set URL just does nothing.
+// The user's own URL (Provider settings → Provider URL, stored in localStorage `providerUrls`) wins.
+export const DEFAULT_PROVIDER_URLS: Record<string, string> = {
+  claude: 'https://claude.ai/settings/usage',
+  grok: 'https://grok.com',
+  mistral: 'https://console.mistral.ai',
+  ollama: 'https://ollama.com/settings',
+  cloudflare: 'https://dash.cloudflare.com',
+  groq: 'https://console.groq.com',
+  firecrawl: 'https://www.firecrawl.dev/app',
+  tavily: 'https://app.tavily.com',
+  openrouter: 'https://openrouter.ai/settings/credits',
+  deepgram: 'https://console.deepgram.com',
+  serpapi: 'https://serpapi.com/dashboard',
+  context7: 'https://context7.com',
+  elevenlabs: 'https://elevenlabs.io/app',
+  runpod: 'https://www.runpod.io/console',
+  github: 'https://github.com',
+  cohere: 'https://dashboard.cohere.com',
+  consensus: 'https://consensus.app',
 };
 
 // A provider's group: explicit choice (cardGroup[provider]) wins; otherwise fall back to
@@ -122,17 +144,17 @@ function WindowIcon({ window }: { window: any }) {
   const label = window.label?.toLowerCase() || '';
   const unit = window.unit?.toLowerCase() || '';
   
-  if (id.includes('token') || label.includes('token') || unit.includes('token')) return <Database size={14} className="text-neutral-400" />;
-  if (id.includes('request') || label.includes('request')) return <Cpu size={14} className="text-neutral-400" />;
-  if (id.includes('cost') || label.includes('cost') || unit.includes('$')) return <Zap size={14} className="text-neutral-400" />;
-  if (id.includes('minute') || label.includes('minute') || unit.includes('min')) return <Clock size={14} className="text-neutral-400" />;
-  if (id.includes('day') || label.includes('daily')) return <Calendar size={14} className="text-neutral-400" />;
-  if (id.includes('month') || label.includes('monthly')) return <Calendar size={14} className="text-neutral-400" />;
-  if (id.includes('week') || label.includes('weekly')) return <Calendar size={14} className="text-neutral-400" />;
-  if (id.includes('session') || label.includes('session')) return <Activity size={14} className="text-neutral-400" />;
-  if (id.includes('vibe') || label.includes('vibe')) return <Brain size={14} className="text-neutral-400" />;
-  if (id.includes('primary') || label.includes('primary')) return <Server size={14} className="text-neutral-400" />;
-  return <Database size={14} className="text-neutral-400" />;
+  if (id.includes('token') || label.includes('token') || unit.includes('token')) return <Database size={14} className="text-neutral-200" />;
+  if (id.includes('request') || label.includes('request')) return <Cpu size={14} className="text-neutral-200" />;
+  if (id.includes('cost') || label.includes('cost') || unit.includes('$')) return <Zap size={14} className="text-neutral-200" />;
+  if (id.includes('minute') || label.includes('minute') || unit.includes('min')) return <Clock size={14} className="text-neutral-200" />;
+  if (id.includes('day') || label.includes('daily')) return <Calendar size={14} className="text-neutral-200" />;
+  if (id.includes('month') || label.includes('monthly')) return <Calendar size={14} className="text-neutral-200" />;
+  if (id.includes('week') || label.includes('weekly')) return <Calendar size={14} className="text-neutral-200" />;
+  if (id.includes('session') || label.includes('session')) return <Activity size={14} className="text-neutral-200" />;
+  if (id.includes('vibe') || label.includes('vibe')) return <Brain size={14} className="text-neutral-200" />;
+  if (id.includes('primary') || label.includes('primary')) return <Server size={14} className="text-neutral-200" />;
+  return <Database size={14} className="text-neutral-200" />;
 }
 
 // Pinned bar across every page — surfaces the single biggest %-point mover
@@ -163,7 +185,7 @@ function HeadlineBar({ onJump, hidden, showDepletion }: { onJump: (provider: str
   if (!entries.length) return null;
 
   return (
-    <div className="w-full bg-neutral-900 border-b border-neutral-800 px-4 py-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-xs shrink-0">
+    <div className="w-full bg-neutral-900 border-b border-neutral-700 px-4 py-2 flex flex-wrap items-center gap-x-6 gap-y-1 text-sm shrink-0">
       {entries.map(([scope, mover]) =>
         scope === 'depleting' ? (
           <button
@@ -174,7 +196,7 @@ function HeadlineBar({ onJump, hidden, showDepletion }: { onJump: (provider: str
           >
             <span className="text-red-400 uppercase tracking-wider font-semibold">Depleting</span>
             <AlertCircle size={14} className="text-red-400 shrink-0" />
-            <span className="text-neutral-200 font-medium">
+            <span className="text-neutral-100 font-medium">
               {mover.provider_label} {mover.window_label}
             </span>
             <span className="text-red-400">
@@ -188,13 +210,13 @@ function HeadlineBar({ onJump, hidden, showDepletion }: { onJump: (provider: str
             className="flex items-center gap-2 hover:opacity-80 transition-opacity"
             title={`${mover.provider_label} · ${mover.window_label}: ${mover.from_pct.toFixed(1)}% → ${mover.to_pct.toFixed(1)}%`}
           >
-            <span className="text-neutral-400 uppercase tracking-wider font-semibold">{SCOPE_LABEL[scope] || scope}</span>
+            <span className="text-neutral-200 uppercase tracking-wider font-semibold">{SCOPE_LABEL[scope] || scope}</span>
             {mover.delta >= 0 ? (
               <TrendingUp size={14} className="text-red-400 shrink-0" />
             ) : (
               <TrendingDown size={14} className="text-emerald-400 shrink-0" />
             )}
-            <span className="text-neutral-200 font-medium">
+            <span className="text-neutral-100 font-medium">
               {mover.provider_label} {mover.window_label}
             </span>
             <span className={mover.delta >= 0 ? 'text-red-400' : 'text-emerald-400'}>
@@ -227,15 +249,67 @@ function HeadlineBar({ onJump, hidden, showDepletion }: { onJump: (provider: str
  * @param subtitle - Optional subtitle (e.g., "metered APIs")
  * @param icon     - React component for the group icon
  * @param providers - Array of provider objects to display in this group
- * @param onJump   - Callback when a provider row is clicked
+ * @param onRefresh  - Force-refresh one provider (card button)
+ * @param onSettings - Open that provider's settings modal (card button)
  * @param layout   - Either 'list' (vertical rows with bars) or 'grid' (compact values only)
  */
-function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list' }: {
-  title: string;
+// Per-provider refresh + settings buttons, shown on every Overview card
+// (replaces the old sidebar row's buttons). Always visible on touch, hover-reveal
+// on md+ when the parent carries the `group` class.
+export function CardActions({ provider, onRefresh, onSettings, size = 14, className = '' }: {
+  provider: string;
+  onRefresh: (provider: string) => void;
+  onSettings: (provider: string) => void;
+  size?: number;
+  className?: string;
+}) {
+  const btn = 'p-1 rounded-md text-neutral-300 opacity-100 md:opacity-0 md:group-hover:opacity-100 focus-visible:opacity-100 hover:bg-neutral-700/50 transition-colors';
+  return (
+    // stopPropagation: double-clicking a button must not also trigger the card's open-URL dblclick.
+    <div className={`flex items-center shrink-0 ${className}`} onDoubleClick={(e) => e.stopPropagation()}>
+      <button onClick={() => onRefresh(provider)} className={`${btn} hover:text-emerald-400`} title={`Force refresh ${provider}`}>
+        <RefreshCw size={size} />
+      </button>
+      <button onClick={() => onSettings(provider)} className={`${btn} hover:text-neutral-100`} title={`${provider} settings`}>
+        <Settings size={size} />
+      </button>
+    </div>
+  );
+}
+
+// The one place a window's reset countdown is drawn: always the upper-right of its
+// row/tile, same icon + weight everywhere. `reset` is the resetText() string or null.
+function ResetBadge({ reset, className = '' }: { reset: string | null; className?: string }) {
+  if (!reset) return null;
+  return (
+    <span title={`resets in ${reset}`} className={`flex items-center gap-0.5 text-sm font-medium tabular-nums text-neutral-200 shrink-0 ${className}`}>
+      <Clock size={10} className="text-neutral-300" />
+      {reset}
+    </span>
+  );
+}
+
+// A card's windows often reset together (Mistral: both 11d, Groq: every model). When they
+// all show the same countdown, it's drawn ONCE in the card header above the buttons and the
+// per-row badges are suppressed; when they differ (Claude 5h vs 7d) each row keeps its own.
+function sharedReset(p: any): string | null {
+  const set = new Set<string>();
+  for (const w of p.windows || []) {
+    const r = resetText(w);
+    if (r) set.add(r);
+  }
+  return set.size === 1 ? [...set][0] : null;
+}
+
+function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, onOpen, layout = 'list', bare = false }: {
+  onOpen: (p: string) => void;
+  title?: string;
   subtitle?: string;
-  icon: React.ReactNode;
+  icon?: React.ReactNode;
+  bare?: boolean; // single-provider card: no group header, the provider row is the header
   providers: any[];
-  onJump: (p: string) => void;
+  onRefresh: (p: string) => void;
+  onSettings: (p: string) => void;
   layout?: 'list' | 'grid';
 }) {
   if (!providers.length) return null;
@@ -279,19 +353,23 @@ function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list'
           // can't flag a bucket that got there before the projection could.
           const exhausted = hasBar && w.pct >= 100;
           return (
-            <div key={w.id}>
+            <div key={w.id} className="group/win relative">
+              {/* Value lives in a hover flyout (out of flow) when there's a bar to read;
+                  a window with no bar has nothing else to show, so its number stays inline. */}
+              {hasBar && (
+                <div className={`pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/win:flex rounded-md border border-neutral-600 bg-neutral-950 px-2 py-1 text-sm font-medium tabular-nums shadow-lg shadow-black/40 ${exhausted ? 'text-red-400' : 'text-neutral-100'}`}>
+                  {valueText(w)}
+                </div>
+              )}
               <div className="flex items-center justify-between gap-3">
                 <div className="flex items-center gap-1 min-w-0">
-                  <span className="text-xs text-neutral-500 truncate" title={w.note || undefined}>{w.label || w.id}</span>
+                  <span className="text-sm text-neutral-300 truncate" title={w.note || undefined}>{w.label || w.id}</span>
                   {exhausted && <AlertCircle size={12} className="text-red-400 shrink-0" />}
-                  {reset && (
-                    <span title={`resets in ${reset}`} className="flex items-center gap-0.5 text-[10px] font-medium text-neutral-400 shrink-0">
-                      <Clock size={9} className="text-neutral-500" />
-                      {reset}
-                    </span>
-                  )}
                 </div>
-                <span className={`text-sm font-medium shrink-0 tabular-nums ${exhausted ? 'text-red-400' : 'text-neutral-100'}`}>{valueText(w)}</span>
+                <div className="flex items-center gap-2 shrink-0">
+                  {!hasBar && <span className="text-base font-medium tabular-nums text-neutral-100">{valueText(w)}</span>}
+                  <ResetBadge reset={sharedReset(p) ? null : reset} />
+                </div>
               </div>
               {hasBar && (
                 <div className="mt-0.5">
@@ -303,8 +381,63 @@ function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list'
         })}
       </div>
     ) : (
-      <div className="text-xs text-neutral-500">no data yet</div>
+      <div className="text-sm text-neutral-300">no data yet</div>
     );
+
+  // Groq: the daemon emits 4 account-level 30d totals (ids cost/generated_tokens/
+  // context_tokens/requests — dropped here) plus, per model, one requests window
+  // (`daily_<slug>`) and one tokens window (`daily_tokens_<slug>`). Render one line
+  // per model: name once, requests bar left, tokens bar right. All windows share the
+  // same daily reset, so it's said once in the header instead of on every row.
+  const groqLines = (p: any) => {
+    const models: { slug: string; name: string; req?: any; tok?: any }[] = [];
+    for (const w of p.windows || []) {
+      const m = /^daily_(tokens_)?(.+)$/.exec(w.id || '');
+      if (!m) continue;
+      let row = models.find((r) => r.slug === m[2]);
+      if (!row) {
+        row = { slug: m[2], name: String(w.label || w.id).replace(/ daily( tokens)?$/, '') };
+        models.push(row);
+      }
+      if (m[1]) row.tok = w; else row.req = w;
+    }
+    if (!models.length) return listWindowLines(p);
+    const withReset = (p.windows || []).find((w: any) => /^daily_/.test(w.id || '') && w.resets_at);
+    const reset = withReset ? resetText(withReset) : null;
+    const cell = (w: any, color: string) => {
+      if (!w) return <div />;
+      const exhausted = typeof w.pct === 'number' && w.pct >= 100;
+      return (
+        <div>
+          <ActivityBar pct={w.pct} pct1hAgo={w.pct_1h_ago} color={exhausted ? '#ef4444' : color} />
+        </div>
+      );
+    };
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="grid grid-cols-2 gap-x-4 text-sm uppercase tracking-wide text-neutral-300">
+          <span>Requests</span>
+          <span className="flex items-center justify-between">
+            Tokens
+          </span>
+        </div>
+        {models.map((r) => (
+          <div key={r.slug} className="group/model relative">
+            {/* Flyout: values live here, out of flow, so the rows stay one line each. */}
+            <div className="pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/model:flex items-center gap-3 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40">
+              {r.req && <span className={r.req.pct >= 100 ? 'text-red-400' : 'text-neutral-100'}><span className="text-neutral-300">req </span>{valueText(r.req)}</span>}
+              {r.tok && <span className={r.tok.pct >= 100 ? 'text-red-400' : 'text-neutral-100'}><span className="text-neutral-300">tok </span>{valueText(r.tok)}</span>}
+            </div>
+            <div className="text-sm text-neutral-300 truncate">{r.name}</div>
+            <div className="grid grid-cols-2 gap-x-4">
+              {cell(r.req, windowColor(0, undefined))}
+              {cell(r.tok, windowColor(1, undefined))}
+            </div>
+          </div>
+        ))}
+      </div>
+    );
+  };
 
   // Grid tiles: kept deliberately small — no bars (the number is the point at this
   // density), tight line-height, sized to its own content (items-start on the grid
@@ -316,59 +449,29 @@ function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list'
   // the value itself, since there's no separate label line to carry it).
   const gridWindowLines = (p: any) =>
     p.windows?.length ? (
-      p.windows.length === 1 ? (
-        (() => {
-          const w = p.windows[0];
-          const reset = resetText(w);
-          return (
-            <div className="flex flex-col">
-              {/* Tiny label line (same style as multi-window tiles below) —
-                  valueText no longer repeats the unit, so this names it. */}
-              <span className="text-[10px] text-neutral-500 leading-tight truncate">{w.label || w.id}</span>
-              <div className="flex items-baseline gap-1.5 flex-wrap">
-                <span className="text-base font-bold text-neutral-100 tabular-nums leading-tight">{valueText(w)}</span>
-                {reset && (
-                  <span title={`resets in ${reset}`} className="flex items-center gap-0.5 text-[10px] font-medium text-neutral-500 shrink-0">
-                    <Clock size={9} />
-                    {reset}
-                  </span>
-                )}
-              </div>
+      p.windows.length === 1 ? null : ( // single-window tile: its value rides the header line
+        <div className="flex flex-col gap-0.5">
+          {p.windows.map((w: any) => (
+            <div key={w.id} className="flex items-baseline justify-between gap-2">
+              <span className="text-sm text-neutral-300 truncate">{w.label || w.id}</span>
+              <span className="text-base font-semibold text-neutral-100 tabular-nums shrink-0">{valueText(w)}</span>
             </div>
-          );
-        })()
-      ) : (
-        <div className="flex flex-col gap-1">
-          {p.windows.map((w: any) => {
-            const reset = resetText(w);
-            return (
-              <div key={w.id}>
-                <div className="flex items-center gap-1 text-[10px] text-neutral-500 leading-tight">
-                  <span className="truncate">{w.label || w.id}</span>
-                  {reset && (
-                    <span title={`resets in ${reset}`} className="flex items-center gap-0.5 shrink-0">
-                      <Clock size={9} />
-                      {reset}
-                    </span>
-                  )}
-                </div>
-                <span className="text-sm font-semibold text-neutral-100 tabular-nums leading-tight">{valueText(w)}</span>
-              </div>
-            );
-          })}
+          ))}
         </div>
       )
     ) : (
-      <span className="text-xs text-neutral-500">no data yet</span>
+      <span className="text-sm text-neutral-300">no data yet</span>
     );
 
   return (
-    <div className="bg-neutral-900 border border-neutral-800 rounded-xl p-5">
-      <div className="flex items-center gap-2 mb-4">
-        {icon}
-        <h3 className="font-medium text-neutral-100">{title}</h3>
-        {subtitle && <span className="text-xs text-neutral-500">{subtitle}</span>}
-      </div>
+    <div className="bg-neutral-900 border border-neutral-700 rounded-xl p-5 mb-4 break-inside-avoid">
+      {!bare && (
+        <div className="flex items-center gap-2 mb-4">
+          {icon}
+          <h3 className="font-medium text-neutral-100">{title}</h3>
+          {subtitle && <span className="text-sm text-neutral-300">{subtitle}</span>}
+        </div>
+      )}
 
       {layout === 'grid' ? (
         // CSS multi-column, not grid: a grid row's track height is set by its
@@ -378,43 +481,53 @@ function GroupedCard({ title, subtitle, icon, providers, onJump, layout = 'list'
         // dead gap under its shorter same-row neighbors (Context7, Deepgram).
         // Columns lay out independently per column instead, so each tile stacks
         // directly under the previous one in its own column — no shared row height.
-        <div className="columns-[120px] gap-2">
+        <div className="columns-[190px] gap-2">
           {providers.map((p) => (
-            <button
+            <div
               key={p.provider}
-              onClick={() => onJump(p.provider)}
-              className="block w-full text-left p-2 mb-2 rounded-lg border border-neutral-800 bg-neutral-950/40 hover:border-neutral-700 transition-colors break-inside-avoid"
+              onDoubleClick={() => onOpen(p.provider)}
+              className="group relative block w-full text-left p-2 mb-2 rounded-lg border border-neutral-700 bg-neutral-950/40 hover:border-neutral-700 transition-colors break-inside-avoid"
             >
-              <div className="flex items-center gap-1.5 mb-1 min-w-0">
+              <div className={`flex items-center gap-1.5 min-w-0 ${p.windows?.length > 1 ? 'mb-1' : ''}`}>
                 <ProviderIcon
                   provider={p.provider}
                   size={13}
-                  className={`shrink-0 ${p.status === 'ok' && !p.stale ? 'text-emerald-400' : p.status === 'ok' ? 'text-amber-400' : p.status ? 'text-red-500' : 'text-neutral-400'}`}
+                  className={`shrink-0 ${p.status === 'ok' && !p.stale ? 'text-emerald-400' : p.status === 'ok' ? 'text-amber-400' : p.status ? 'text-red-500' : 'text-neutral-200'}`}
                 />
-                <span className="capitalize text-xs text-neutral-400 truncate">{p.provider}</span>
+                <span className="capitalize text-sm text-neutral-200 truncate">{p.provider}</span>
+                {p.windows?.length === 1 && (
+                  // One window: "Deepgram ....... $196.99" on a single line; the unit label
+                  // ("Balance", "Requests/mo") moves to the tooltip.
+                  <span title={p.windows[0].label || p.windows[0].id} className="ml-auto text-lg font-bold text-neutral-100 tabular-nums shrink-0">{valueText(p.windows[0])}</span>
+                )}
+                <CardActions provider={p.provider} onRefresh={onRefresh} onSettings={onSettings} size={12} className="absolute -top-3 right-1 z-10 rounded-md border border-neutral-600 bg-neutral-950 shadow-md shadow-black/50 md:opacity-0 md:group-hover:opacity-100 transition-opacity" />
               </div>
               {gridWindowLines(p)}
-            </button>
+            </div>
           ))}
         </div>
       ) : (
-        <div className="flex flex-col divide-y divide-neutral-800">
+        <div className="flex flex-col divide-y divide-neutral-700">
           {providers.map((p) => (
-            <button
+            <div
               key={p.provider}
-              onClick={() => onJump(p.provider)}
-              className="text-left py-2.5 first:pt-0 last:pb-0 hover:opacity-80 transition-opacity"
+              onDoubleClick={() => onOpen(p.provider)}
+              className="group text-left py-2.5 first:pt-0 last:pb-0"
             >
               <div className="flex items-center gap-2 min-w-0">
                 <ProviderIcon
                   provider={p.provider}
                   size={14}
-                  className={`shrink-0 ${p.status === 'ok' && !p.stale ? 'text-emerald-400' : p.status === 'ok' ? 'text-amber-400' : p.status ? 'text-red-500' : 'text-neutral-400'}`}
+                  className={`shrink-0 ${p.status === 'ok' && !p.stale ? 'text-emerald-400' : p.status === 'ok' ? 'text-amber-400' : p.status ? 'text-red-500' : 'text-neutral-200'}`}
                 />
-                <span className="capitalize text-sm text-neutral-300 truncate">{p.provider}</span>
+                <span className="capitalize text-base text-neutral-200 truncate">{p.provider}</span>
+                <div className="ml-auto flex flex-col items-end">
+                  <ResetBadge reset={sharedReset(p)} className="mr-1" />
+                  <CardActions provider={p.provider} onRefresh={onRefresh} onSettings={onSettings} size={13} />
+                </div>
               </div>
-              <div className="mt-1 pl-3.5">{listWindowLines(p)}</div>
-            </button>
+              <div className="mt-1 pl-3.5">{p.provider === 'groq' ? groqLines(p) : listWindowLines(p)}</div>
+            </div>
           ))}
         </div>
       )}
@@ -498,7 +611,7 @@ function ActivityBar({ pct, pct1hAgo, color }: { pct: number | null; pct1hAgo: n
   if (typeof pct1hAgo === 'number') {
     const solid = Math.min(clamp(pct1hAgo), cur); // where we were 1h ago (or since reset)
     return (
-      <div className="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden relative">
+      <div className="h-1.5 w-full bg-neutral-700 rounded-full overflow-hidden relative">
         <div className="h-full absolute inset-y-0 left-0" style={{ width: `${solid}%`, backgroundColor: fill }} />
         {cur > solid && (
           <div className="h-full absolute inset-y-0" style={{ left: `${solid}%`, width: `${cur - solid}%`, backgroundColor: ACTIVITY_DELTA_COLOR }} />
@@ -507,7 +620,7 @@ function ActivityBar({ pct, pct1hAgo, color }: { pct: number | null; pct1hAgo: n
     );
   }
   return (
-    <div className="h-1.5 w-full bg-neutral-800 rounded-full overflow-hidden">
+    <div className="h-1.5 w-full bg-neutral-700 rounded-full overflow-hidden">
       <div className="h-full" style={{ width: `${cur}%`, backgroundColor: fill }} />
     </div>
   );
@@ -555,15 +668,13 @@ const BOARD_REFRESH_S = 30;
  * GroupedCard. The 'none' group gets full-width cards with ActivityBar;
  * grouped providers render compact rows inside their group card.
  *
- * Used when viewMode === 'bar'. Mirrored by OverviewBoardPie for pie mode.
- *
  * @param providers   - Full provider list from daemon
  * @param cardGroup   - Map of provider id → CardGroup (user-assigned)
- * @param onJump      - Callback to navigate to a provider detail
- * @param showDepletion - Show depletion alert icons
+ * @param onRefresh   - Force-refresh one provider (card button)
+ * @param onSettings  - Open a provider's settings modal (card button)
  * @param fetchedAt   - Timestamp of last data refresh (for "next refresh" countdown)
  */
-function OverviewBoardV3({ providers, cardGroup, onJump, showDepletion, fetchedAt }: { providers: any[]; cardGroup: Record<string, CardGroup>; onJump: (p: string) => void; showDepletion: boolean; fetchedAt: number | null }) {
+function OverviewBoardV3({ providers, cardGroup, onRefresh, onSettings, onOpen, fetchedAt }: { providers: any[]; cardGroup: Record<string, CardGroup>; onRefresh: (p: string) => void; onSettings: (p: string) => void; onOpen: (p: string) => void; fetchedAt: number | null }) {
   const [, setTick] = useState(0);
   useEffect(() => {
     const id = setInterval(() => setTick((n) => n + 1), 1000);
@@ -571,7 +682,7 @@ function OverviewBoardV3({ providers, cardGroup, onJump, showDepletion, fetchedA
   }, []);
 
   if (!providers.length) {
-    return <div className="flex items-center justify-center h-full text-neutral-400">No providers configured</div>;
+    return <div className="flex items-center justify-center h-full text-neutral-200">No providers configured</div>;
   }
 
   // Providers collapse into one shared compact card per group instead of taking a full
@@ -606,30 +717,38 @@ function OverviewBoardV3({ providers, cardGroup, onJump, showDepletion, fetchedA
           <Activity size={18} className="text-emerald-400" />
           <h2 className="text-lg font-semibold text-neutral-100">Overview</h2>
         </div>
-        <span title="Time until this board's data refreshes" className="flex items-center gap-1.5 text-xs text-neutral-400">
-          <RefreshCw size={13} className="text-neutral-500" />
+        <span title="Time until this board's data refreshes" className="flex items-center gap-1.5 text-sm text-neutral-200">
+          <RefreshCw size={13} className="text-neutral-300" />
           {nextRefreshS != null ? `${nextRefreshS}s` : ''}
         </span>
       </div>
-      <div className="grid grid-cols-[repeat(auto-fit,minmax(360px,1fr))] gap-4">
+      {/* Masonry: CSS columns, not grid — a grid row stretches every card to the tallest
+          one; columns let each card keep its own height and stack under the previous. */}
+      <div className="columns-[360px] gap-4">
         {/* Grouped providers share one grid cell per group rather than taking one each. */}
-        <GroupedCard title="Support Services" subtitle="metered APIs" icon={<Wrench size={16} className="text-neutral-400" />} providers={support} onJump={onJump} layout="grid" />
-        <GroupedCard title="Daily" icon={<Clock size={16} className="text-neutral-400" />} providers={daily} onJump={onJump} />
-        <GroupedCard title="Weekly" icon={<CalendarDays size={16} className="text-neutral-400" />} providers={weekly} onJump={onJump} />
-        <GroupedCard title="Monthly" icon={<CalendarClock size={16} className="text-neutral-400" />} providers={monthly} onJump={onJump} />
+        <GroupedCard title="Support Services" subtitle="metered APIs" icon={<Wrench size={16} className="text-neutral-200" />} providers={support} onRefresh={onRefresh} onSettings={onSettings} onOpen={onOpen} layout="grid" />
+        {/* Only Support Services shares a card; every other provider gets its own
+            (Daily/Weekly/Monthly assignment now just sets order, not a shared card). */}
+        {[...daily, ...weekly, ...monthly].map((p) => (
+          <GroupedCard key={p.provider} bare providers={[p]} onRefresh={onRefresh} onSettings={onSettings} onOpen={onOpen} />
+        ))}
         {sorted.map((p) => (
-          <button
+          <div
             key={p.provider}
-            onClick={() => onJump(p.provider)}
-            className="text-left bg-neutral-900 border border-neutral-800 rounded-xl p-5 hover:border-neutral-700 transition-colors"
+            onDoubleClick={() => onOpen(p.provider)}
+            className="group text-left bg-neutral-900 border border-neutral-700 rounded-xl p-5 mb-4 break-inside-avoid hover:border-neutral-700 transition-colors"
           >
             <div className="flex items-center gap-2 mb-3">
               <span className={`w-2 h-2 rounded-full shrink-0 ${p.status === 'ok' && !p.stale ? 'bg-emerald-500' : p.status === 'ok' ? 'bg-amber-500' : 'bg-red-500'}`} />
               <ProviderIcon provider={p.provider} size={18} className="text-emerald-400" />
               <span className="capitalize font-medium text-neutral-100">{p.provider}</span>
+              <div className="ml-auto flex flex-col items-end">
+                <ResetBadge reset={sharedReset(p)} className="mr-1" />
+                <CardActions provider={p.provider} onRefresh={onRefresh} onSettings={onSettings} />
+              </div>
             </div>
             {p.status !== 'ok' && (
-              <div className="text-xs text-red-400 mb-2">{p.status}{p.stale ? ' (stale)' : ''}</div>
+              <div className="text-sm text-red-400 mb-2">{p.status}{p.stale ? ' (stale)' : ''}</div>
             )}
             {p.windows?.length ? (
               <div className="flex flex-col gap-3">
@@ -640,30 +759,29 @@ function OverviewBoardV3({ providers, cardGroup, onJump, showDepletion, fetchedA
                   // (a forecast): a bucket that's ALREADY gone must not render as
                   // a quiet normal row — red bar + the same alert icon.
                   const exhausted = typeof w.pct === 'number' && w.pct >= 100;
-                  const depleting = showDepletion && (w.will_deplete || exhausted);
+                  const depleting = exhausted; // forecast ("will_deplete") display removed — didn't work
                   return (
-                    <div key={w.id}>
-                      <div className="flex items-center justify-between text-xs mb-1">
+                    <div key={w.id} className="group/win relative">
+                      {/* Flyout: the value(s) live here, out of flow, so rows stay label + bar only. */}
+                      <div className={`pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/win:flex items-center gap-3 rounded-md border border-neutral-600 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40 ${depleting ? 'text-red-400' : 'text-neutral-100'}`}>
+                        <span className="font-medium">{primary}</span>
+                        {secondary && <span className="text-neutral-200">{secondary}</span>}
+                      </div>
+                      <div className="flex items-center justify-between text-sm mb-1">
                         <div className="flex items-center gap-1.5 min-w-0">
                           <WindowIcon window={w} />
                           {/* Fixed-width label so "resets in" starts at the same
                               x position on every row (and every card) — reads
                               as one aligned column instead of drifting with
                               each label's length. */}
-                          <span className="text-neutral-400 w-24 shrink-0 truncate">{label}</span>
-                          {reset && (
-                            <span title={`resets in ${reset}`} className="flex items-center gap-1 text-[11px] font-medium text-neutral-300 shrink-0">
-                              <Clock size={10} className="text-neutral-500" />
-                              {reset}
-                            </span>
-                          )}
+                          <span className="text-neutral-200 w-24 shrink-0 truncate">{label}</span>
                           {depleting && (
                             <span title="Projected to run out before it resets" className="flex items-center shrink-0">
                               <AlertCircle size={12} className="text-red-400" />
                             </span>
                           )}
                         </div>
-                        <span className={`shrink-0 ${depleting ? 'text-red-400 font-medium' : 'text-neutral-200'}`}>{primary}</span>
+                        <ResetBadge reset={sharedReset(p) ? null : reset} />
                       </div>
                       {/* Bar always fills in the consumed direction (matches
                           Cloudflare/Firecrawl's own dashboards, and reads as
@@ -673,17 +791,14 @@ function OverviewBoardV3({ providers, cardGroup, onJump, showDepletion, fetchedA
                           views of the same pct: text answers "how much do I
                           have," bar answers "how close am I to the wall." */}
                       <ActivityBar pct={w.pct} pct1hAgo={w.pct_1h_ago} color={exhausted ? '#ef4444' : windowColor(i, w.color)} />
-                      {secondary && (
-                        <div className="text-[11px] text-neutral-400 mt-1">{secondary}</div>
-                      )}
                     </div>
                   );
                 })}
               </div>
             ) : (
-              <div className="text-xs text-neutral-400">no data yet</div>
+              <div className="text-sm text-neutral-200">no data yet</div>
             )}
-          </button>
+          </div>
         ))}
       </div>
     </div>
@@ -785,13 +900,14 @@ function DaemonPanel({ onHealthChange }: { onHealthChange?: (health: any | null)
     : `Daemon v${health.version} · up ${fmtUptime(health.uptime_s)} · ${providerCounts}${health.under_systemd ? '' : ' · not supervised'}`;
 
   return (
-    <div className="flex items-center gap-2 text-xs min-w-0">
+    <div className="flex items-center gap-2 text-sm min-w-0">
       <div className="flex items-center gap-1.5 min-w-0" title={statusTitle}>
         <span className={`w-2 h-2 rounded-full shrink-0 ${down ? 'bg-red-500' : 'bg-emerald-500'}`} />
-        <span className="font-medium text-neutral-300 shrink-0">Daemon</span>
-        {health && <span className="text-neutral-400 shrink-0">v{health.version}</span>}
+        <span className="inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-sm font-medium text-cyan-200 shrink-0">
+          Python daemon{health?.version ? ` v${health.version}` : ''}
+        </span>
         {!down && (
-          <span className="text-neutral-500 truncate hidden lg:inline">
+          <span className="text-neutral-300 truncate hidden lg:inline">
             up {fmtUptime(health.uptime_s)}{providerCounts ? ` · ${providerCounts}` : ''}
           </span>
         )}
@@ -820,54 +936,10 @@ function DaemonPanel({ onHealthChange }: { onHealthChange?: (health: any | null)
         </button>
       </div>
       {note && (
-        <div className="absolute top-full right-0 mt-1 z-20 px-2 py-1 rounded bg-neutral-900 border border-neutral-700 text-neutral-300 text-[11px] shadow-lg max-w-sm break-words">
+        <div className="absolute top-full right-0 mt-1 z-20 px-2 py-1 rounded bg-neutral-900 border border-neutral-700 text-neutral-200 text-sm shadow-lg max-w-sm break-words">
           {note}
         </div>
       )}
-    </div>
-  );
-}
-
-// One sidebar provider row -- shared between the non-support and Support
-// slices of the nav list so the split (App.tsx, sidebar <nav>) doesn't
-// duplicate this JSX.
-function ProviderRow({ p, sidebarCollapsed, selectedProvider, onSelect, setSettingsProvider, onForcePoll }: {
-  p: any;
-  sidebarCollapsed: boolean;
-  selectedProvider: string | null;
-  onSelect: (provider: string) => void;
-  setSettingsProvider: (provider: string) => void;
-  onForcePoll: (provider: string) => void;
-}) {
-  return (
-    <div
-      title={p.provider}
-      className={`group flex-shrink-0 flex items-center justify-between gap-1 ${sidebarCollapsed ? 'md:justify-center md:px-1' : 'pl-3 pr-1'} py-1 text-sm rounded-lg transition-colors ${
-        selectedProvider === p.provider
-          ? 'bg-neutral-800 text-white font-medium'
-          : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-200'
-      }`}
-    >
-      <button onClick={() => onSelect(p.provider)} className="flex items-center gap-2 py-1 min-w-0">
-        <ProviderIcon provider={p.provider} size={16} className={p.status === 'ok' && !p.stale ? 'text-emerald-400' : p.status === 'ok' ? 'text-amber-400' : p.status ? 'text-red-500' : 'text-neutral-400'} />
-        <span className={`capitalize truncate ${sidebarCollapsed ? 'md:hidden' : ''}`}>{p.provider}</span>
-      </button>
-      <div className={`flex items-center gap-1 shrink-0 ${sidebarCollapsed ? 'md:hidden' : ''}`}>
-        <button
-          onClick={(e) => { e.stopPropagation(); onForcePoll(p.provider); }}
-          className="p-1.5 rounded-md text-neutral-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-emerald-400 hover:bg-neutral-700/50 transition-colors"
-          title={`Force refresh ${p.provider}`}
-        >
-          <RefreshCw size={14} />
-        </button>
-        <button
-          onClick={(e) => { e.stopPropagation(); setSettingsProvider(p.provider); }}
-          className="p-1.5 rounded-md text-neutral-500 opacity-100 md:opacity-0 md:group-hover:opacity-100 hover:text-neutral-200 hover:bg-neutral-700/50 transition-colors"
-          title={`${p.provider} settings`}
-        >
-          <Settings size={14} />
-        </button>
-      </div>
     </div>
   );
 }
@@ -876,14 +948,9 @@ export function App() {
   const [providers, setProviders] = useState<any[]>([]);
   const [daemonHealth, setDaemonHealth] = useState<any>(null);
   const [providersFetchedAt, setProvidersFetchedAt] = useState<number | null>(null);
-  // Selecting a provider swaps main content to its dashboard page directly
-  // (no flyout/drawer) -- selectedProvider === null shows the Overview board.
-  const [selectedProvider, setSelectedProvider] = useState<string | null>(null);
-  const jumpToProvider = (p: string) => setSelectedProvider(p);
   const [settingsProvider, setSettingsProvider] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const [viewMode, setViewMode] = useState<'bar' | 'pie'>('bar');
 
   // Client-side visibility: hide a provider from the UI (sidebar, overview,
   // headline) WITHOUT touching the daemon — it keeps polling & recording. Just
@@ -923,85 +990,62 @@ export function App() {
     try { localStorage.setItem('cardGroups', JSON.stringify(DEFAULT_CARD_GROUPS)); } catch {}
     return DEFAULT_CARD_GROUPS;
   });
-  const setCardGroup = (provider: string, group: CardGroup) =>
-    setCardGroupState((prev) => {
-      const next = { ...prev, [provider]: group };
-      try { localStorage.setItem('cardGroups', JSON.stringify(next)); } catch {}
-      return next;
-    });
 
-  // Sidebar treeview: which group branches are collapsed. Independent of `hidden` —
-  // collapsing a branch just tucks its rows away, the providers in it are still "on".
-  const [collapsedBranches, setCollapsedBranches] = useState<Set<CardGroup>>(() => {
-    try {
-      return new Set(JSON.parse(localStorage.getItem('sidebarCollapsedBranches') || '[]'));
-    } catch {
-      return new Set();
-    }
+  // Per-provider URL override (Provider settings → Provider URL), opened by double-clicking
+  // a card. Persisted like `hidden`/`cardGroups`; an empty value removes the override.
+  const [providerUrls, setProviderUrls] = useState<Record<string, string>>(() => {
+    try { return JSON.parse(localStorage.getItem('providerUrls') || '{}'); } catch { return {}; }
   });
-  const toggleBranch = (group: CardGroup) =>
-    setCollapsedBranches((prev) => {
-      const next = new Set(prev);
-      next.has(group) ? next.delete(group) : next.add(group);
-      try { localStorage.setItem('sidebarCollapsedBranches', JSON.stringify([...next])); } catch {}
-      return next;
-    });
-
-  // App-wide UI toggles (currently just depletion info), persisted as one
-  // JSON blob so future settings don't each need their own localStorage key.
-  const [globalSettings, setGlobalSettings] = useState<{ showDepletion: boolean }>(() => {
-    try {
-      return { showDepletion: false, ...JSON.parse(localStorage.getItem('globalSettings') || '{}') };
-    } catch {
-      return { showDepletion: false };
-    }
-  });
-  const updateGlobalSettings = (next: { showDepletion: boolean }) => {
-    setGlobalSettings(next);
-    localStorage.setItem('globalSettings', JSON.stringify(next));
+  const persistUrls = (next: Record<string, string>) => {
+    try { localStorage.setItem('providerUrls', JSON.stringify(next)); } catch {}
+    return next;
   };
-  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
-
-  // Sidebar collapse (desktop only — the mobile layout is already a
-  // horizontal top nav, collapsing it wouldn't make sense there). Persisted
-  // so it survives reloads.
-  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
-    try {
-      return localStorage.getItem('sidebarCollapsed') === '1';
-    } catch {
-      return false;
-    }
-  });
-  const toggleSidebar = () =>
-    setSidebarCollapsed((prev) => {
-      const next = !prev;
-      try { localStorage.setItem('sidebarCollapsed', next ? '1' : '0'); } catch {}
-      return next;
+  const setProviderUrl = (provider: string, url: string) =>
+    setProviderUrls((prev) => {
+      const next = { ...prev };
+      if (url.trim()) next[provider] = url.trim(); else delete next[provider];
+      return persistUrls(next);
     });
+  // Default when the user hasn't set one: the built-in map, else the auth domain the
+  // daemon reports on the provider row (cookie_from_firefox, e.g. ".claude.ai").
+  const defaultUrlFor = (provider: string): string => {
+    if (DEFAULT_PROVIDER_URLS[provider]) return DEFAULT_PROVIDER_URLS[provider];
+    const domain = providers.find((p) => p.provider === provider)?.cookie_from_firefox;
+    return typeof domain === 'string' && domain ? `https://${domain.replace(/^\./, '')}` : '';
+  };
+  const openProvider = (provider: string) => {
+    const url = providerUrls[provider] || defaultUrlFor(provider);
+    if (/^https?:\/\//i.test(url)) window.open(url, '_blank', 'noopener,noreferrer');
+  };
 
-  // Overview page redesign (V3) lives side-by-side with the current layout
-  // (V2) rather than replacing it, so the two can be A/B'd. Defaults to V2 —
-  // nothing changes for existing usage until explicitly switched — and
-  // persists across reloads.
-
-  // Keyboard nav: Up/Down (or j/k) walk [Overview, ...visible providers].
-  // Ignored while typing in a form field or with the settings modal open.
-  useEffect(() => {
-    function onKeyDown(e: KeyboardEvent) {
-      const tag = (document.activeElement?.tagName || '').toLowerCase();
-      if (tag === 'input' || tag === 'textarea' || settingsProvider) return;
-      const down = e.key === 'ArrowDown' || e.key === 'j';
-      const up = e.key === 'ArrowUp' || e.key === 'k';
-      if (!down && !up) return;
-      e.preventDefault();
-      const order: (string | null)[] = [null, ...visibleProviders.map((p) => p.provider)];
-      const i = order.indexOf(selectedProvider);
-      const next = down ? Math.min(order.length - 1, (i < 0 ? -1 : i) + 1) : Math.max(0, (i < 0 ? 1 : i) - 1);
-      setSelectedProvider(order[next]);
+  // Config import/export: everything the UI keeps in localStorage, as one JSON file.
+  const exportConfig = () => {
+    const cfg = { app: 'usage-web-ui', version: 1, hiddenProviders: [...hidden], cardGroups: cardGroup, providerUrls };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(cfg, null, 2)], { type: 'application/json' }));
+    a.download = 'usage-web-ui-config.json';
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+  // Returns an error message, or null on success. Only known keys with the right shape are applied.
+  const importConfig = (text: string): string | null => {
+    let cfg: any;
+    try { cfg = JSON.parse(text); } catch { return 'Not valid JSON'; }
+    if (!cfg || typeof cfg !== 'object' || cfg.app !== 'usage-web-ui') return 'Not a usage-web-ui config file';
+    const isStrMap = (o: any) => o && typeof o === 'object' && !Array.isArray(o) && Object.values(o).every((v) => typeof v === 'string');
+    if (Array.isArray(cfg.hiddenProviders) && cfg.hiddenProviders.every((s: any) => typeof s === 'string')) {
+      setHidden(new Set(cfg.hiddenProviders));
+      try { localStorage.setItem('hiddenProviders', JSON.stringify(cfg.hiddenProviders)); } catch {}
     }
-    window.addEventListener('keydown', onKeyDown);
-    return () => window.removeEventListener('keydown', onKeyDown);
-  }, [visibleProviders, selectedProvider, settingsProvider]);
+    if (isStrMap(cfg.cardGroups)) {
+      setCardGroupState(cfg.cardGroups);
+      try { localStorage.setItem('cardGroups', JSON.stringify(cfg.cardGroups)); } catch {}
+    }
+    if (isStrMap(cfg.providerUrls)) setProviderUrls(persistUrls(cfg.providerUrls));
+    return null;
+  };
+
+  const [showGlobalSettings, setShowGlobalSettings] = useState(false);
 
   const fetchProviders = async () => {
     try {
@@ -1010,10 +1054,6 @@ export function App() {
       const data = await res.json();
       setProviders(data);
       setProvidersFetchedAt(Date.now());
-      // No auto-select: selectedProvider stays null on load so the landing view
-      // is the cross-provider Overview board (recent refreshes + current usage).
-      // The user drills into a provider by clicking; the "Overview" nav item and
-      // the header title both return here (setSelectedProvider(null)).
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1027,7 +1067,7 @@ export function App() {
     return () => clearInterval(interval);
   }, []);
 
-  // Per-row force-refresh from the sidebar.
+  // Per-card force-refresh.
   const forcePollProvider = async (providerToPoll: string) => {
     try {
       const res = await fetch(`/usage/${providerToPoll}/refresh`, { method: 'POST' });
@@ -1041,46 +1081,28 @@ export function App() {
     <div
       className="min-h-[100dvh] text-neutral-100 flex flex-col"
       style={{
-        backgroundImage: "linear-gradient(rgba(9,9,11,0.85), rgba(9,9,11,0.85)), url('/bubbalab-wallpaper.png')",
+        backgroundImage: "linear-gradient(rgba(9,9,11,0.94), rgba(9,9,11,0.94)), url('/bubbalab-wallpaper.png')",
         backgroundSize: 'cover',
         backgroundPosition: 'center',
         backgroundAttachment: 'fixed',
       }}
     >
       {/* Full-width top header — logo left, daemon controls + settings upper-right */}
-      <header className="shrink-0 bg-neutral-900/92 backdrop-blur-xl border-b border-neutral-800 px-3 md:px-4 py-2.5 flex items-center justify-between gap-3 shadow-lg shadow-black/20">
-        <button onClick={() => { setSelectedProvider(null); }} className="text-left flex items-center gap-3 min-w-0">
+      <header className="shrink-0 bg-neutral-900/92 backdrop-blur-xl border-b border-neutral-700 px-3 md:px-4 py-2.5 flex items-center justify-between gap-3 shadow-lg shadow-black/20">
+        <div className="text-left flex items-center gap-3 min-w-0">
           <img src="/hoboguppy-logo2.svg" alt="" className="w-9 h-9 shrink-0" />
           <div className="min-w-0">
-            <p className="text-cyan-400 text-xs font-extrabold hidden sm:block leading-tight" style={{ fontFamily: 'ui-rounded, "Segoe UI Rounded", system-ui, sans-serif' }}>bubbAlab</p>
+            <p className="text-cyan-400 text-sm font-extrabold hidden sm:block leading-tight" style={{ fontFamily: 'ui-rounded, "Segoe UI Rounded", system-ui, sans-serif' }}>bubbAlab</p>
             <div className="flex flex-wrap items-center gap-x-2 gap-y-1">
-              <h1 className="text-base md:text-lg font-bold leading-tight text-white">Provider Usage Monitor</h1>
-              <span className="inline-flex items-center rounded-full border border-cyan-500/30 bg-cyan-500/10 px-2 py-0.5 text-[11px] font-medium text-cyan-200">
-                Python daemon{daemonHealth?.version ? ` v${daemonHealth.version}` : ''}
-              </span>
+              <h1 className="text-lg md:text-lg font-bold leading-tight text-white">Provider Usage WebUI</h1>
             </div>
-            <p className="hidden md:block text-xs text-neutral-400 leading-tight">Live quota dashboard across local and hosted providers</p>
           </div>
-        </button>
+        </div>
         <div className="relative flex items-center gap-2 shrink-0">
           <DaemonPanel onHealthChange={setDaemonHealth} />
-          <div className="flex items-center gap-1 bg-neutral-900 border border-neutral-800 rounded-lg p-0.5">
-            <button
-              onClick={() => setViewMode('bar')}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === 'bar' ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
-            >
-              Bars
-            </button>
-            <button
-              onClick={() => setViewMode('pie')}
-              className={`px-2.5 py-1 rounded-md text-xs font-medium transition-colors ${viewMode === 'pie' ? 'bg-neutral-700 text-white' : 'text-neutral-500 hover:text-neutral-300'}`}
-            >
-              Pies
-            </button>
-          </div>
           <button
             onClick={() => setShowGlobalSettings(true)}
-            className="p-1.5 rounded-md text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 transition-colors shrink-0"
+            className="p-1.5 rounded-md text-neutral-300 hover:text-neutral-100 hover:bg-neutral-800 transition-colors shrink-0"
             title="Settings"
           >
             <Settings size={16} />
@@ -1088,64 +1110,12 @@ export function App() {
         </div>
       </header>
 
-      <div className="flex-1 flex flex-col md:flex-row min-h-0">
-      {/* Sidebar / Top Nav on Mobile */}
-      <aside className={`w-full ${sidebarCollapsed ? 'md:w-16' : 'md:w-52'} bg-neutral-900 border-b md:border-b-0 md:border-r border-neutral-800 flex flex-col shrink-0 transition-[width] duration-150`}>
-        <div className="hidden md:flex items-center justify-end px-2 py-1.5 border-b border-neutral-800">
-          <button
-            onClick={toggleSidebar}
-            className="flex items-center justify-center p-1.5 rounded-md text-neutral-500 hover:text-neutral-200 hover:bg-neutral-800 transition-colors"
-            title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
-          >
-            {sidebarCollapsed ? <ChevronRight size={14} /> : <ChevronLeft size={14} />}
-          </button>
-        </div>
-
-        <nav className="flex md:flex-col p-3 md:p-4 gap-2 overflow-x-auto md:overflow-y-auto custom-scrollbar flex-1">
-          <button
-            onClick={() => { setSelectedProvider(null); }}
-            title="Overview"
-            className={`flex-shrink-0 flex items-center gap-2 ${sidebarCollapsed ? 'md:justify-center md:px-2' : 'px-3'} py-2 text-sm rounded-lg transition-colors ${
-              selectedProvider === null
-                ? 'bg-neutral-800 text-white font-medium'
-                : 'text-neutral-400 hover:bg-neutral-800/50 hover:text-neutral-200'
-            }`}
-          >
-            <Activity size={16} className={selectedProvider === null ? 'text-emerald-400' : ''} />
-            <span className={sidebarCollapsed ? 'md:hidden' : ''}>Overview</span>
-          </button>
-          {providers.length === 0 && !loading && (
-            <div className={`px-2 text-sm text-neutral-400 whitespace-nowrap ${sidebarCollapsed ? 'md:hidden' : ''}`}>No providers found</div>
-          )}
-          {GROUP_ORDER.map((group) => {
-            const branchProviders = visibleProviders.filter((p) => resolveGroup(p, cardGroup) === group);
-            if (!branchProviders.length) return null;
-            const collapsed = collapsedBranches.has(group);
-            return (
-              <React.Fragment key={group}>
-                <button
-                  onClick={() => toggleBranch(group)}
-                  className={`hidden md:flex flex-shrink-0 w-full items-center gap-1 text-xs font-semibold text-neutral-400 uppercase tracking-wider mb-2 mt-2 px-2 hover:text-neutral-200 transition-colors ${sidebarCollapsed ? 'md:hidden' : ''}`}
-                  title={collapsed ? `Expand ${GROUP_LABEL[group]}` : `Collapse ${GROUP_LABEL[group]}`}
-                >
-                  <ChevronDown size={12} className={`transition-transform ${collapsed ? '-rotate-90' : ''}`} />
-                  {GROUP_LABEL[group]}
-                  <span className="text-neutral-600 normal-case font-normal">({branchProviders.length})</span>
-                </button>
-                {!collapsed && branchProviders.map((p) => (
-                  <ProviderRow key={p.provider} p={p} sidebarCollapsed={sidebarCollapsed} selectedProvider={selectedProvider} onSelect={jumpToProvider} setSettingsProvider={setSettingsProvider} onForcePoll={forcePollProvider} />
-                ))}
-              </React.Fragment>
-            );
-          })}
-        </nav>
-      </aside>
-
+      <div className="flex-1 flex flex-col min-h-0">
       {/* Main Content */}
       <main className="flex-1 overflow-y-auto p-4 md:p-8 custom-scrollbar">
         {loading ? (
           <div className="flex items-center justify-center h-full">
-            <RefreshCw className="animate-spin text-neutral-500" />
+            <RefreshCw className="animate-spin text-neutral-300" />
           </div>
         ) : error ? (
           <div className="p-4 bg-red-900/20 border border-red-500/50 rounded-xl text-red-400 flex items-center gap-3">
@@ -1153,11 +1123,7 @@ export function App() {
             <span>{error}</span>
           </div>
         ) : (
-          viewMode === 'pie' ? (
-            <OverviewBoardPie providers={visibleProviders} cardGroup={cardGroup} onJump={jumpToProvider} fetchedAt={providersFetchedAt} />
-          ) : (
-            <OverviewBoardV3 providers={visibleProviders} cardGroup={cardGroup} onJump={jumpToProvider} showDepletion={globalSettings.showDepletion} fetchedAt={providersFetchedAt} />
-          )
+          <OverviewBoardV3 providers={visibleProviders} cardGroup={cardGroup} onRefresh={forcePollProvider} onSettings={setSettingsProvider} onOpen={openProvider} fetchedAt={providersFetchedAt} />
         )}
       </main>
       </div>
@@ -1169,18 +1135,22 @@ export function App() {
           onRefresh={fetchProviders}
           hidden={hidden}
           onToggleHidden={toggleHidden}
+          url={providerUrls[settingsProvider]}
+          defaultUrl={defaultUrlFor(settingsProvider)}
+          onSetUrl={setProviderUrl}
         />
       )}
       {showGlobalSettings && (
         <GlobalSettingsModal
-          settings={globalSettings}
-          onChange={updateGlobalSettings}
           onClose={() => setShowGlobalSettings(false)}
           providers={providers}
           hidden={hidden}
           onToggleHidden={toggleHidden}
-          cardGroup={cardGroup}
-          onSetCardGroup={setCardGroup}
+          providerUrls={providerUrls}
+          onSetUrl={setProviderUrl}
+          defaultUrlFor={defaultUrlFor}
+          onExport={exportConfig}
+          onImport={importConfig}
         />
       )}
     </div>

@@ -6,25 +6,24 @@ repos, not a monorepo. See its `../AGENTS.md` for the wider picture.
 
 ## Architecture
 
-No router — page is one `selectedProvider` state variable in `App.tsx` (`null` =
-Overview, else a provider id). Settings is not a page — it's a `settingsProvider`
-state var that opens `ProviderSettingsModal` as an overlay, triggered by a gear icon on
-each sidebar provider row. No Redux/Zustand, function components + hooks only.
+No router, no sidebar, no provider detail page — the app is one page: the Overview
+board (`OverviewBoardV3` in `App.tsx`), a masonry of cards (CSS `columns`, so each card
+keeps its own height). Every provider card carries a refresh button (POST
+`/usage/:provider/refresh`) and a settings gear (`settingsProvider` state →
+`ProviderSettingsModal` overlay); double-clicking a card opens the provider's URL in a new
+tab. No Redux/Zustand, function components + hooks only.
 
 - `src/client/main.tsx` — ReactDOM bootstrap.
-- `src/client/App.tsx` — nearly all app logic: `HeadlineBar`, `DaemonPanel`,
-  `OverviewBoardV3`, `OverviewBoardPie`, `ProviderDashboard`, `ProviderIcon`.
-  `viewMode` state ('bar' | 'pie') toggles between `OverviewBoardV3` and
-  `OverviewBoardPie`. Read the inline comments here first — they document
-  non-obvious decisions (see Key design below).
-- `src/client/PieCharts.tsx` — pie/donut chart components (`ProviderPie`,
-  `ProviderPieMini`, `PieLegend`, `PieTooltip`) using Recharts.
-- `src/client/OverviewBoardPie.tsx` — pie-chart variant of the overview board
-  (`OverviewBoardPie`), mirror of `OverviewBoardV3` but with donut charts
-  instead of bars.
-- `src/client/SettingsView.tsx` — exports `ProviderSettingsModal`: one provider's auth
-  form (cookie/oauth-file/token per `config.auth.kind`) + visibility toggle, as a modal
-  over a backdrop. Not a page, not a list of all providers.
+- `src/client/App.tsx` — nearly all app logic: `HeadlineBar` (currently unrendered),
+  `DaemonPanel`, `OverviewBoardV3`, `GroupedCard`, `CardActions`, `ResetBadge`,
+  `ProviderIcon`. Read the inline comments here first — they document non-obvious
+  decisions (see Key design below).
+- `src/client/SettingsView.tsx` — exports `ProviderSettingsModal`: one provider's URL
+  override, visibility toggle and auth form (cookie/oauth-file/token per
+  `config.auth.kind`), as a modal over a backdrop. Not a page.
+- `src/client/GlobalSettingsModal.tsx` — main Settings (header gear): config
+  export/import (JSON), and a row per provider with its URL override (default shown as
+  placeholder) and visibility toggle.
 - `src/client/assets/providers/*.svg` — brand logo per provider (`currentColor` SVGs
   from `@lobehub/icons-static-svg`), imported via `?raw` and rendered inline
   (`dangerouslySetInnerHTML`) in `ProviderIcon` so they inherit the tint `className` the
@@ -65,11 +64,30 @@ the version number in `ExecStart` must be bumped when the active version moves.
 - Computes its own burn-rate/depletion projection client-side (`slope()` in `App.tsx`)
   rather than trusting a daemon-computed value — deliberate duplication, not an
   oversight.
-- View mode toggle (Bars/Pies) in the main content area switches between
-  `OverviewBoardV3` (bars) and `OverviewBoardPie` (donut charts). Toggle is session-scoped
-  (useState, not persisted) — a future iteration may add localStorage persistence.
+- **Cards**: only "Support Services" (providers whose group resolves to `support` via
+  `resolveGroup`) share one card, drawn as compact tiles — a single-window provider is
+  one line (`Deepgram ..... $196.99`, label in the tooltip). Every other provider gets its
+  own card. Group assignment is no longer editable in the UI (the Daily/Weekly/Monthly
+  "buckets" only order the cards); `cardGroups` in localStorage still feeds `resolveGroup`.
+- **Numbers hidden on non-Support cards**: values show in a hover flyout (absolutely
+  positioned, no layout space). Exceptions: Support tiles, and windows with no bar.
+  Groq is special-cased (`groqLines` in `GroupedCard`): the four 30d totals are dropped
+  and each model is one line — requests bar left, tokens bar right.
+- **Reset countdown** is drawn by `ResetBadge` only: once in the card header (above the
+  refresh/settings buttons) when all windows share the same countdown (`sharedReset`),
+  else per-row at the row's right end. Never shown on Support tiles.
+- **Provider URL** (double-click a card): user override in `localStorage.providerUrls` >
+  `DEFAULT_PROVIDER_URLS` > `https://<cookie_from_firefox domain>` from the provider row.
+  Config import/export (header gear → Settings) round-trips `hiddenProviders`,
+  `cardGroups` and `providerUrls` as JSON (`app: "usage-web-ui"` marker checked on import).
+- The pie/donut view and the sidebar were removed; `recharts` is still in `package.json`
+  but unused. Depletion forecast display was removed too (full cards only flag windows
+  already at ≥100%).
+- **Type/contrast**: no web font (Tailwind system stack; `bubbAlab` uses `ui-rounded`,
+  credential boxes are mono). Muted text is `text-neutral-300` at minimum on the dark
+  cards — don't go dimmer; it was unreadable at 100% zoom.
 - `DaemonPanel` talks only to `/usage/health` and `/usage/admin/:action` — no coupling
-  to daemon internals beyond that. Rendered in the top header (right side), not the sidebar.
+  to daemon internals beyond that. Rendered in the top header (right side).
   Compact horizontal layout: button labels hide on narrow screens (`hidden sm:inline`),
   full status text shows only on `lg`+ (`hidden lg:inline`). Notes appear as an absolute
   dropdown below the controls (auto-dismiss after 10s).

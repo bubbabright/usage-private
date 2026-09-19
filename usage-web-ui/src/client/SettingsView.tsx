@@ -3,7 +3,7 @@ import { X, Eye, EyeOff } from 'lucide-react';
 import { ProviderIcon } from './App';
 
 // Per-provider settings, opened via the gear icon on that provider's sidebar row.
-export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefresh, hidden, onToggleHidden }: any) {
+export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefresh, hidden, onToggleHidden, url, defaultUrl, onSetUrl }: any) {
   const [config, setConfig] = useState<any>(null);
   const [revealed, setRevealed] = useState(false);
   // "Refresh from Firefox" state. The daemon exposes cookie_from_firefox on the
@@ -37,37 +37,37 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60" onClick={onClose}>
       <div
-        className="bg-neutral-900 border border-neutral-800 rounded-xl p-4 w-full max-w-md"
+        className="bg-neutral-900 border border-neutral-700 rounded-xl p-4 w-full max-w-md"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between mb-3">
-          <h4 className="font-medium text-base capitalize flex items-center gap-2">
+          <h4 className="font-medium text-lg capitalize flex items-center gap-2">
             <ProviderIcon provider={provider} size={18} className="text-emerald-400" />
             {provider}
           </h4>
           <div className="flex items-center gap-2">
             {hasForm && connected && (
-              <span className="text-xs text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-2 py-1 rounded flex items-center gap-1">
+              <span className="text-sm text-emerald-400 bg-emerald-950/50 border border-emerald-900 px-2 py-1 rounded flex items-center gap-1">
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 inline-block" />
                 Connected
               </span>
             )}
             {config?.auth && (
-              <span className="text-xs text-neutral-400 bg-neutral-950 px-2 py-1 rounded">{config.auth.kind}</span>
+              <span className="text-sm text-neutral-200 bg-neutral-950 px-2 py-1 rounded">{config.auth.kind}</span>
             )}
-            <button onClick={onClose} className="text-neutral-500 hover:text-neutral-300 p-1">
+            <button onClick={onClose} className="text-neutral-300 hover:text-neutral-200 p-1">
               <X size={16} />
             </button>
           </div>
         </div>
 
-        <div className="flex items-center justify-between mb-3 p-2 bg-neutral-950 rounded-lg border border-neutral-800">
-          <span className="text-sm text-neutral-400">Visibility</span>
+        <div className="flex items-center justify-between mb-3 p-2 bg-neutral-950 rounded-lg border border-neutral-700">
+          <span className="text-base text-neutral-200">Visibility</span>
           <button
             onClick={() => onToggleHidden(provider)}
-            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-xs font-medium transition-colors ${
+            className={`flex items-center gap-2 px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
               isHidden
-                ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-400'
+                ? 'bg-neutral-800 hover:bg-neutral-700 text-neutral-200'
                 : 'bg-emerald-950/50 border border-emerald-900 text-emerald-400 hover:bg-emerald-950'
             }`}
             title={isHidden ? 'Hidden — click to show' : 'Visible — click to hide'}
@@ -76,14 +76,28 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
           </button>
         </div>
 
+        <div className="mb-3 p-2 bg-neutral-950 rounded-lg border border-neutral-700">
+          <label className="block text-base text-neutral-200 mb-1">
+            Provider URL <span className="text-neutral-300 text-sm">(double-click a card to open)</span>
+          </label>
+          <input
+            type="url"
+            value={url ?? ''}
+            placeholder={defaultUrl || 'https://…'}
+            onChange={(e) => onSetUrl(provider, e.target.value)}
+            className="w-full px-2 py-1.5 rounded-md text-sm bg-neutral-900 border border-neutral-700 text-neutral-100 placeholder:text-neutral-300 focus:outline-none focus:border-neutral-500"
+          />
+          {defaultUrl && <div className="mt-1 text-sm text-neutral-300">Leave empty to use the default: {defaultUrl}</div>}
+        </div>
+
         {config?.auth && (
           <>
             {hasForm && connected && !revealed && (
               <div className="flex items-center justify-between">
-                <p className="text-sm text-neutral-400">Credentials accepted.</p>
+                <p className="text-base text-neutral-200">Credentials accepted.</p>
                 <button
                   onClick={() => setRevealed(true)}
-                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-300 rounded-lg text-sm font-medium transition-colors whitespace-nowrap"
+                  className="px-3 py-1.5 bg-neutral-800 hover:bg-neutral-700 text-neutral-200 rounded-lg text-base font-medium transition-colors whitespace-nowrap"
                 >
                   Replace credentials
                 </button>
@@ -93,7 +107,7 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
             {hasForm && connected && revealed && (
               <button
                 onClick={() => setRevealed(false)}
-                className="text-xs text-neutral-400 hover:text-neutral-200 mb-2"
+                className="text-sm text-neutral-200 hover:text-neutral-100 mb-2"
               >
                 ← cancel
               </button>
@@ -101,12 +115,12 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
 
             {showForm && config.auth.kind === 'cookie' && (
               <div className="flex flex-col gap-2">
-                <p className="text-sm text-neutral-400">
+                <p className="text-base text-neutral-200">
                   Paste a session cookie. Stored daemon-side.
                 </p>
 
                 {providerMeta?.cookie_from_firefox && (
-                  <div className="flex flex-col gap-1 pb-1 border-b border-neutral-800">
+                  <div className="flex flex-col gap-1 pb-1 border-b border-neutral-700">
                     <button
                       disabled={ffBusy}
                       onClick={async () => {
@@ -127,23 +141,23 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
                           setFfBusy(false);
                         }
                       }}
-                      className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                      className="px-4 py-2 bg-amber-600 hover:bg-amber-500 disabled:opacity-50 text-white rounded-lg text-base font-medium transition-colors"
                     >
                       {ffBusy ? 'Reading Firefox…' : `Refresh from Firefox (${providerMeta.cookie_from_firefox})`}
                     </button>
-                    <p className="text-xs text-neutral-500">
+                    <p className="text-sm text-neutral-300">
                       Pulls this site's cookie from your local Firefox profile once — log in there first if it's expired.
                       {providerMeta.cookie_expires_at && (
                         <> Last read expires {new Date(providerMeta.cookie_expires_at).toLocaleString()}.</>
                       )}
                     </p>
-                    {ffNote && <p className="text-xs text-red-400">{ffNote}</p>}
+                    {ffNote && <p className="text-sm text-red-400">{ffNote}</p>}
                   </div>
                 )}
                 <textarea
                   id={`cookie-input-${provider}`}
                   placeholder="name=value; ..."
-                  className="w-full h-16 bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-sm font-mono text-neutral-300 focus:outline-none focus:border-emerald-500 resize-none custom-scrollbar"
+                  className="w-full h-16 bg-neutral-950 border border-neutral-700 rounded-lg p-2 text-base font-mono text-neutral-200 focus:outline-none focus:border-emerald-500 resize-none custom-scrollbar"
                 />
                 <div className="flex gap-2">
                   <button
@@ -170,7 +184,7 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
                         setSaving(false);
                       }
                     }}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-base font-medium transition-colors"
                   >
                     {saving ? 'Checking cookie…' : 'Set Cookie'}
                   </button>
@@ -187,26 +201,26 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
                         setSaving(false);
                       }
                     }}
-                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-300 rounded-lg text-sm font-medium transition-colors"
+                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-200 rounded-lg text-base font-medium transition-colors"
                   >
                     Flush
                   </button>
                 </div>
                 {result && (
-                  <p className={`text-xs ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>{result.msg}</p>
+                  <p className={`text-sm ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>{result.msg}</p>
                 )}
               </div>
             )}
 
             {showForm && config.auth.kind === 'oauth-file' && (
               <div className="flex flex-col gap-2">
-                <p className="text-sm text-neutral-400">
+                <p className="text-base text-neutral-200">
                   Paste CLI credentials JSON.
                 </p>
                 <textarea
                   id={`oauth-input-${provider}`}
                   placeholder='{"accessToken": "..."}'
-                  className="w-full h-20 bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-sm font-mono text-neutral-300 focus:outline-none focus:border-emerald-500 resize-none custom-scrollbar"
+                  className="w-full h-20 bg-neutral-950 border border-neutral-700 rounded-lg p-2 text-base font-mono text-neutral-200 focus:outline-none focus:border-emerald-500 resize-none custom-scrollbar"
                 />
                 <div className="flex gap-2">
                   <button
@@ -217,7 +231,7 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
                       setRevealed(false);
                       onRefresh();
                     }}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-sm font-medium transition-colors"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-base font-medium transition-colors"
                   >
                     Set Credentials
                   </button>
@@ -227,7 +241,7 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
 
             {showForm && config.auth.kind === 'token' && (
               <div className="flex flex-col gap-2">
-                <p className="text-sm text-neutral-400">
+                <p className="text-base text-neutral-200">
                   {config.auth.relogin
                     ? `Paste: ${config.auth.relogin}. Stored daemon-side, never shown back.`
                     : 'Paste an API key. Stored daemon-side, never shown back.'}
@@ -236,7 +250,7 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
                   id={`token-input-${provider}`}
                   type="password"
                   placeholder={config.auth.relogin ? 'Session token / JWT' : 'API key'}
-                  className="w-full bg-neutral-950 border border-neutral-800 rounded-lg p-2 text-sm font-mono text-neutral-300 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-neutral-950 border border-neutral-700 rounded-lg p-2 text-base font-mono text-neutral-200 focus:outline-none focus:border-emerald-500"
                 />
                 <div className="flex gap-2">
                   <button
@@ -273,7 +287,7 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
                         setSaving(false);
                       }
                     }}
-                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-sm font-medium transition-colors"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white rounded-lg text-base font-medium transition-colors"
                   >
                     {saving ? 'Checking key…' : 'Set Key'}
                   </button>
@@ -290,13 +304,13 @@ export function ProviderSettingsModal({ provider, providerMeta, onClose, onRefre
                         setSaving(false);
                       }
                     }}
-                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-300 rounded-lg text-sm font-medium transition-colors"
+                    className="px-4 py-2 bg-neutral-800 hover:bg-neutral-700 disabled:opacity-50 text-neutral-200 rounded-lg text-base font-medium transition-colors"
                   >
                     Purge
                   </button>
                 </div>
                 {result && (
-                  <p className={`text-xs ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>{result.msg}</p>
+                  <p className={`text-sm ${result.ok ? 'text-emerald-400' : 'text-red-400'}`}>{result.msg}</p>
                 )}
               </div>
             )}
