@@ -4,7 +4,7 @@ unit tests; fixtures are recorded API responses)."""
 import pytest
 
 from usage_daemon.errors import AuthExpiredError
-from usage_daemon.providers.llm7 import create, parse
+from usage_daemon.providers.llm7 import create, next_utc_midnight, parse
 from pathlib import Path
 
 FIXTURE = Path(__file__).parent / "fixtures" / "llm7-quota.json"
@@ -21,9 +21,17 @@ def test_parse_single_daily_tokens_window():
     assert w["used"] == 2431
     assert w["cap"] == 1_000_000
     assert w["unit"] == "tokens"
-    assert w["resets_at"] is None  # 24h rolling window, no fixed reset
+    assert w["resets_at"].endswith("Z")
     assert w["color"] == "#56B4E9"
     assert w["will_deplete"] is False
+
+
+def test_next_utc_midnight_is_in_the_future():
+    from datetime import datetime, timezone
+
+    reset = datetime.fromisoformat(next_utc_midnight().replace("Z", "+00:00"))
+    assert reset > datetime.now(timezone.utc)
+    assert reset.hour == 0
 
 
 def test_parse_tier_from_fixture():

@@ -213,6 +213,7 @@ class Runner:
                 "cookie_expires_at": entry.get("cookieExpiresAt"),
                 "category": (cfg() or {}).get("category", "plan"),
                 "windows": windows,
+                "segments": (snap or {}).get("segments", []),
             })
         return out
 

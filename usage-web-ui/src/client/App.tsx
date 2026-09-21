@@ -22,14 +22,14 @@ import openrouterLogo from './assets/providers/openrouter.svg?raw';
 const SCOPE_LABEL: Record<string, string> = { poll: 'Since poll', '12h': 'Last 12h', '24h': 'Last 24h' };
 
 // Bar/accent color by window POSITION, not by provider or metric identity: a
-// provider's only window is always yellow; a provider's second window is always
+// provider's only window is always teal; a provider's second window is always
 // blue. Anything beyond a 2nd window keeps its own daemon-assigned color (not
 // covered by this rule). Colors are Okabe-Ito (colorblind-safe, matches the rest
 // of the palette already used suite-wide).
-const POSITION_YELLOW = '#F0E442';
+const POSITION_PRIMARY = '#00D4A8';
 const POSITION_BLUE = '#56B4E9';
 function windowColor(index: number, fallback: string | undefined): string {
-  if (index === 0) return POSITION_YELLOW;
+  if (index === 0) return POSITION_PRIMARY;
   if (index === 1) return POSITION_BLUE;
   return fallback || '#6b7280';
 }
@@ -53,13 +53,15 @@ export const GROUP_LABEL: Record<CardGroup, string> = {
 const DEFAULT_CARD_GROUPS: Record<string, CardGroup> = {
   cloudflare: 'daily', grok: 'daily', groq: 'daily', llm7: 'daily', openrouter: 'daily',
   claude: 'weekly', ollama: 'weekly', 'opencode-go': 'weekly',
-  hyper: 'monthly', abacus: 'monthly', mistral: 'monthly', cohere: 'monthly',
+  aion: 'monthly', voyage: 'monthly', hyper: 'monthly', abacus: 'monthly', mistral: 'monthly', cohere: 'monthly',
 };
 
 // Built-in "where do I look at this provider" pages, opened by double-clicking its card.
 // Only ones known to be right; a provider with no entry and no user-set URL just does nothing.
 // The user's own URL (Provider settings → Provider URL, stored in localStorage `providerUrls`) wins.
 export const DEFAULT_PROVIDER_URLS: Record<string, string> = {
+  aion: 'https://www.aionlabs.ai/app/usage/',
+  voyage: 'https://dashboard.voyageai.com/organization/usage?tab=free-token',
   claude: 'https://claude.ai/settings/usage',
   grok: 'https://grok.com',
   mistral: 'https://console.mistral.ai',
@@ -82,7 +84,7 @@ export const DEFAULT_PROVIDER_URLS: Record<string, string> = {
 // A provider's group: explicit choice (cardGroup[provider]) wins; otherwise fall back to
 // the daemon's category tag (support vs everything else gets a full card).
 export function resolveGroup(p: any, cardGroup: Record<string, CardGroup>): CardGroup {
-  return cardGroup[p.provider] ?? (p.category === 'support' ? 'support' : 'none');
+  return cardGroup[p.provider] ?? DEFAULT_CARD_GROUPS[p.provider] ?? (p.category === 'support' ? 'support' : 'none');
 }
 
 // Provider -> brand logo mapping (currentColor SVGs, rendered inline so they inherit the same
@@ -301,6 +303,19 @@ function sharedReset(p: any): string | null {
   return set.size === 1 ? [...set][0] : null;
 }
 
+// Support tiles: change in the window's usage % over the last hour (pct − pct_1h_ago), e.g.
+// "+2.1%". Null when either side is missing or nothing moved, so quiet windows stay quiet.
+function DeltaBadge({ w }: { w: any }) {
+  if (typeof w?.pct !== 'number' || typeof w?.pct_1h_ago !== 'number') return null;
+  const d = w.pct - w.pct_1h_ago;
+  if (Math.abs(d) < 0.05) return null;
+  return (
+    <span title="Change in usage over the last hour" className="text-sm font-medium text-red-400 tabular-nums shrink-0">
+      {d > 0 ? '+' : ''}{d.toFixed(1)}%
+    </span>
+  );
+}
+
 function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, onOpen, layout = 'list', bare = false }: {
   onOpen: (p: string) => void;
   title?: string;
@@ -439,6 +454,41 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
     );
   };
 
+  // Voyage emits one segment per model with its free-token allocation and
+  // remaining balance. Keep the aggregate window in the card header, then show
+  // the model-level consumption as one bar per model.
+  const voyageLines = (p: any) => {
+    const models = (p.segments || [])
+      .filter((s: any) => typeof s?.total_tokens === 'number' && s.total_tokens > 0)
+      .map((s: any) => {
+        const used = Math.max(0, s.total_tokens - (typeof s.remaining_tokens === 'number' ? s.remaining_tokens : s.total_tokens));
+        return {
+          name: String(s.model || 'unknown'),
+          pct: Math.max(0, Math.min(100, 100 * used / s.total_tokens)),
+          remaining: Math.max(0, s.remaining_tokens || 0),
+          total: s.total_tokens,
+        };
+      });
+    if (!models.length) return listWindowLines(p);
+    const compact = (n: number) => n.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 2 });
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="text-sm uppercase tracking-wide text-neutral-300">Free tokens by model</div>
+        {models.map((model: any) => (
+          <div key={model.name} className="group/model relative">
+            <div className="pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/model:flex rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40">
+              <span className={model.pct >= 100 ? 'text-red-400' : 'text-neutral-100'}>
+                {compact(model.total - model.remaining)} used / {compact(model.total)} ({compact(model.remaining)} left)
+              </span>
+            </div>
+            <div className="text-sm text-neutral-300 truncate">{model.name}</div>
+            <ActivityBar pct={model.pct} color={model.pct >= 100 ? '#ef4444' : windowColor(0, undefined)} />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
   // Grid tiles: kept deliberately small — no bars (the number is the point at this
   // density), tight line-height, sized to its own content (items-start on the grid
   // container, see below — otherwise CSS Grid stretches every tile in a row to match
@@ -454,7 +504,10 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
           {p.windows.map((w: any) => (
             <div key={w.id} className="flex items-baseline justify-between gap-2">
               <span className="text-sm text-neutral-300 truncate">{w.label || w.id}</span>
-              <span className="text-base font-semibold text-neutral-100 tabular-nums shrink-0">{valueText(w)}</span>
+              <span className="flex items-baseline gap-2 shrink-0">
+                <DeltaBadge w={w} />
+                <span className="text-base font-semibold text-neutral-100 tabular-nums">{valueText(w)}</span>
+              </span>
             </div>
           ))}
         </div>
@@ -498,7 +551,10 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
                 {p.windows?.length === 1 && (
                   // One window: "Deepgram ....... $196.99" on a single line; the unit label
                   // ("Balance", "Requests/mo") moves to the tooltip.
-                  <span title={p.windows[0].label || p.windows[0].id} className="ml-auto text-lg font-bold text-neutral-100 tabular-nums shrink-0">{valueText(p.windows[0])}</span>
+                  <span className="ml-auto flex items-baseline gap-2 shrink-0">
+                    <DeltaBadge w={p.windows[0]} />
+                    <span title={p.windows[0].label || p.windows[0].id} className="text-lg font-bold text-neutral-100 tabular-nums">{valueText(p.windows[0])}</span>
+                  </span>
                 )}
                 <CardActions provider={p.provider} onRefresh={onRefresh} onSettings={onSettings} size={12} className="absolute -top-3 right-1 z-10 rounded-md border border-neutral-600 bg-neutral-950 shadow-md shadow-black/50 md:opacity-0 md:group-hover:opacity-100 transition-opacity" />
               </div>
@@ -526,7 +582,9 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
                   <CardActions provider={p.provider} onRefresh={onRefresh} onSettings={onSettings} size={13} />
                 </div>
               </div>
-              <div className="mt-1 pl-3.5">{p.provider === 'groq' ? groqLines(p) : listWindowLines(p)}</div>
+              <div className="mt-1 pl-3.5">
+                {p.provider === 'groq' ? groqLines(p) : p.provider === 'voyage' ? voyageLines(p) : listWindowLines(p)}
+              </div>
             </div>
           ))}
         </div>
@@ -658,6 +716,13 @@ function resetText(w: any): string | null {
   return fmtCountdown(ms);
 }
 
+function soonestResetMs(p: any): number | null {
+  const resets = (p.windows || [])
+    .map((w: any) => new Date(w.resets_at).getTime())
+    .filter((ms: number) => Number.isFinite(ms) && ms > Date.now());
+  return resets.length ? Math.min(...resets) : null;
+}
+
 // Must match App()'s setInterval(fetchProviders, 30000) — this is purely a
 // display of that same client-side refetch cycle, not a second timer.
 const BOARD_REFRESH_S = 30;
@@ -700,6 +765,14 @@ function OverviewBoardV3({ providers, cardGroup, onRefresh, onSettings, onOpen, 
   const weekly = byGroup('weekly');
   const monthly = byGroup('monthly');
   const sorted = byGroup('none');
+  const cards = [...daily, ...weekly, ...monthly, ...sorted].sort((a, b) => {
+    const aReset = soonestResetMs(a);
+    const bReset = soonestResetMs(b);
+    if (aReset === null && bReset !== null) return 1;
+    if (aReset !== null && bReset === null) return -1;
+    if (aReset !== null && bReset !== null && aReset !== bReset) return aReset - bReset;
+    return a.provider.localeCompare(b.provider);
+  });
 
 
   // One indicator for the whole board instead of a "1 minute ago" on every
@@ -729,10 +802,9 @@ function OverviewBoardV3({ providers, cardGroup, onRefresh, onSettings, onOpen, 
         <GroupedCard title="Support Services" subtitle="metered APIs" icon={<Wrench size={16} className="text-neutral-200" />} providers={support} onRefresh={onRefresh} onSettings={onSettings} onOpen={onOpen} layout="grid" />
         {/* Only Support Services shares a card; every other provider gets its own
             (Daily/Weekly/Monthly assignment now just sets order, not a shared card). */}
-        {[...daily, ...weekly, ...monthly].map((p) => (
+        {cards.map((p) => p.provider === 'groq' ? (
           <GroupedCard key={p.provider} bare providers={[p]} onRefresh={onRefresh} onSettings={onSettings} onOpen={onOpen} />
-        ))}
-        {sorted.map((p) => (
+        ) : (
           <div
             key={p.provider}
             onDoubleClick={() => onOpen(p.provider)}

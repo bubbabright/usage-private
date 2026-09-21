@@ -32,7 +32,7 @@ DASHBOARD_URL = (
 USER_AGENT = "usage-daemon"
 BROWSER_UA = "Mozilla/5.0 (X11; Linux x86_64; rv:153.0) Gecko/20100101 Firefox/153.0"
 
-PLAN_CAP = 100  # free tier: 100 credits/month
+PLAN_CAP = 200  # free tier: 200 credits/month
 
 
 def parse_refresh_text(html: str) -> str | None:

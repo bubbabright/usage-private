@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import math
+from datetime import datetime, timedelta, timezone
 
 from ..errors import AuthExpiredError, RateLimitedError
 from ..httputil import create_client
@@ -21,6 +22,12 @@ LABEL = "LLM7"
 
 API_URL = "https://api-token.llm7.io/my/token-quota"
 USER_AGENT = "Mozilla/5.0 (X11; Linux x86_64) usage-daemon/0.1"
+
+
+def next_utc_midnight() -> str:
+    now = datetime.now(timezone.utc)
+    reset = now.replace(hour=0, minute=0, second=0, microsecond=0) + timedelta(days=1)
+    return reset.isoformat(timespec="milliseconds").replace("+00:00", "Z")
 
 
 def _load(raw):
@@ -65,7 +72,7 @@ def parse(raw) -> dict:
             "used": used,  # consumed tokens (2,431)
             "cap": limit,  # daily cap (1,000,000)
             "unit": "tokens",
-            "resets_at": None,  # 86400s rolling window; no fixed reset boundary
+            "resets_at": next_utc_midnight(),
             "color": TOKEN_COLOR,
             "will_deplete": False,
         }

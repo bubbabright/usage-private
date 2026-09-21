@@ -50,6 +50,7 @@ def _under_systemd_supervision() -> bool:
 
 
 def _register_compiled_in() -> None:
+    from .providers.aion import create as create_aion
     from .providers.abacus import create as create_abacus
     from .providers.claude import create_provider as create_claude
     from .providers.cloudflare import create as create_cloudflare
@@ -71,7 +72,9 @@ def _register_compiled_in() -> None:
     from .providers.runpod import create as create_runpod
     from .providers.serpapi import create as create_serpapi
     from .providers.tavily import create as create_tavily
+    from .providers.voyage import create as create_voyage
 
+    registry.register("aion", create_aion)
     registry.register("ollama", create_ollama)
     registry.register("claude", create_claude)
     registry.register("hyper", create_hyper)
@@ -93,6 +96,7 @@ def _register_compiled_in() -> None:
     registry.register("context7", create_context7)
     registry.register("consensus", create_consensus)
     registry.register("elevenlabs", create_elevenlabs)
+    registry.register("voyage", create_voyage)
 
 
 def _build_runner(cfg: dict) -> Runner:
