@@ -7,7 +7,8 @@ Two sources:
      (resets_at) + Plan card (tier) + "Usage by Model" table (segments).
      Optional; absent cookie => resets_at null, tier free, no segments.
 
-Free tier: 100 credits/month (hardcoded — API doesn't return cap). Used = cap - balance.
+Free tier: 200 credits/month (hardcoded — API doesn't return cap; verified on
+the dashboard 2026-09). Used = cap - balance.
 """
 
 from __future__ import annotations

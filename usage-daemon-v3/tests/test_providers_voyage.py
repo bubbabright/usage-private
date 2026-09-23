@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytest
 
-from usage_daemon.errors import AuthExpiredError
+from usage_daemon.errors import AuthExpiredError, ProviderError
 from usage_daemon.providers.voyage import create, parse
 
 
@@ -22,7 +22,7 @@ def test_parse_derived_remaining():
 
 
 def test_parse_requires_quota():
-    with pytest.raises(AuthExpiredError):
+    with pytest.raises(ProviderError):
         parse({"status": "ok"})
 
 

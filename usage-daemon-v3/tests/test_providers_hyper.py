@@ -25,11 +25,11 @@ def test_parse_hypercredits_window():
     assert w["id"] == "hypercredits"
     assert w["label"] == "Credits"
     assert w["letter"] == "Hc"
-    assert w["used"] == 22  # 100 - 78
-    assert w["cap"] == 100
+    assert w["used"] == 122  # 200 - 78
+    assert w["cap"] == 200
     assert w["unit"] == "credits"
     assert w["color"] == "#0072B2"
-    assert w["pct"] == 22
+    assert w["pct"] == 61
 
 
 def test_parse_meta_balance():
@@ -38,12 +38,12 @@ def test_parse_meta_balance():
 
 def test_parse_zero_balance_is_100pct():
     windows = parse('{"balance": 0}')["windows"]
-    assert windows[0]["used"] == 100
+    assert windows[0]["used"] == 200
     assert windows[0]["pct"] == 100
 
 
 def test_parse_full_balance_is_0pct():
-    windows = parse('{"balance": 100}')["windows"]
+    windows = parse('{"balance": 200}')["windows"]
     assert windows[0]["used"] == 0
     assert windows[0]["pct"] == 0
 

@@ -2,7 +2,7 @@ import React, { useEffect, useState, useMemo, useRef } from 'react';
 import { 
   Activity, Bell, Server, Settings, History, TrendingUp, TrendingDown, AlertCircle, RefreshCw, Power, RotateCw, Play,
   Bot, Brain, Cloud, Terminal, Wrench, Zap, Mic, Scan, Search, Database, Cpu, HardDrive, Network, Shield, Key, Link, ExternalLink, BookOpen, GraduationCap, MessageSquare, AudioLines, Rocket, GitBranch,
-  Clock, Calendar, CalendarDays, CalendarClock
+  Clock, Calendar, CalendarDays, CalendarClock, ChevronDown, ChevronUp
 } from 'lucide-react';
 import { formatDistanceToNow } from 'date-fns';
 import { ProviderSettingsModal } from './SettingsView';
@@ -24,8 +24,9 @@ const SCOPE_LABEL: Record<string, string> = { poll: 'Since poll', '12h': 'Last 1
 // Bar/accent color by window POSITION, not by provider or metric identity: a
 // provider's only window is always teal; a provider's second window is always
 // blue. Anything beyond a 2nd window keeps its own daemon-assigned color (not
-// covered by this rule). Colors are Okabe-Ito (colorblind-safe, matches the rest
-// of the palette already used suite-wide).
+// covered by this rule). Blue is Okabe-Ito (colorblind-safe, matches the rest
+// of the palette used suite-wide); the teal (#00D4A8, Voyage's token color)
+// is not part of that palette.
 const POSITION_PRIMARY = '#00D4A8';
 const POSITION_BLUE = '#56B4E9';
 function windowColor(index: number, fallback: string | undefined): string {
@@ -81,8 +82,9 @@ export const DEFAULT_PROVIDER_URLS: Record<string, string> = {
   consensus: 'https://consensus.app',
 };
 
-// A provider's group: explicit choice (cardGroup[provider]) wins; otherwise fall back to
-// the daemon's category tag (support vs everything else gets a full card).
+// A provider's group: explicit choice (cardGroup[provider]) wins; otherwise the
+// built-in DEFAULT_CARD_GROUPS default; otherwise the daemon's category tag
+// (support vs everything else gets a full card).
 export function resolveGroup(p: any, cardGroup: Record<string, CardGroup>): CardGroup {
   return cardGroup[p.provider] ?? DEFAULT_CARD_GROUPS[p.provider] ?? (p.category === 'support' ? 'support' : 'none');
 }
@@ -327,6 +329,29 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
   onSettings: (p: string) => void;
   layout?: 'list' | 'grid';
 }) {
+  // Collapse toggle for the two per-model cards (groq/voyage). Hooks must run
+  // unconditionally, so this sits above the empty-group early return; it only
+  // matters when a single collapsible provider is rendered. Persisted per
+  // provider in localStorage `cardCollapse` so the choice survives reloads.
+  const provider = providers[0]?.provider;
+  const [collapsed, setCollapsed] = useState<boolean>(() => {
+    try {
+      return JSON.parse(localStorage.getItem('cardCollapse') || '{}')[provider] ?? false;
+    } catch {
+      return false;
+    }
+  });
+  const toggleCollapsed = () =>
+    setCollapsed((prev) => {
+      const next = !prev;
+      try {
+        const all = JSON.parse(localStorage.getItem('cardCollapse') || '{}');
+        all[provider] = next;
+        localStorage.setItem('cardCollapse', JSON.stringify(all));
+      } catch {}
+      return next;
+    });
+
   if (!providers.length) return null;
 
   // `used` means different things per provider: most support-service plugins already
@@ -400,13 +425,18 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
     );
 
   // Groq: the daemon emits 4 account-level 30d totals (ids cost/generated_tokens/
-  // context_tokens/requests — dropped here) plus, per model, one requests window
+  // context_tokens/requests — dropped here), an all-models daily aggregate
+  // (ids daily_total / daily_tokens_total — rendered as the Total row below,
+  // same shape as voyage's) plus, per model, one requests window
   // (`daily_<slug>`) and one tokens window (`daily_tokens_<slug>`). Render one line
   // per model: name once, requests bar left, tokens bar right. All windows share the
   // same daily reset, so it's said once in the header instead of on every row.
-  const groqLines = (p: any) => {
+  const groqLines = (p: any, totalsOnly = false) => {
+    const totalReq = (p.windows || []).find((w: any) => w.id === 'daily_total');
+    const totalTok = (p.windows || []).find((w: any) => w.id === 'daily_tokens_total');
     const models: { slug: string; name: string; req?: any; tok?: any }[] = [];
     for (const w of p.windows || []) {
+      if (w.id === 'daily_total' || w.id === 'daily_tokens_total') continue; // aggregate — drawn as the Total row
       const m = /^daily_(tokens_)?(.+)$/.exec(w.id || '');
       if (!m) continue;
       let row = models.find((r) => r.slug === m[2]);
@@ -416,7 +446,6 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
       }
       if (m[1]) row.tok = w; else row.req = w;
     }
-    if (!models.length) return listWindowLines(p);
     const withReset = (p.windows || []).find((w: any) => /^daily_/.test(w.id || '') && w.resets_at);
     const reset = withReset ? resetText(withReset) : null;
     const cell = (w: any, color: string) => {
@@ -428,6 +457,28 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
         </div>
       );
     };
+    const totalRow = (totalReq || totalTok) && (
+      <div className="group/model relative">
+        <div className="pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/model:flex items-center gap-3 rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40">
+          {totalReq && <span className={totalReq.pct >= 100 ? 'text-red-400' : 'text-neutral-100'}><span className="text-neutral-300">req </span>{valueText(totalReq)}</span>}
+          {totalTok && <span className={totalTok.pct >= 100 ? 'text-red-400' : 'text-neutral-100'}><span className="text-neutral-300">tok </span>{valueText(totalTok)}</span>}
+        </div>
+        <div className="text-sm text-neutral-200 font-medium truncate">Total</div>
+        <div className="grid grid-cols-2 gap-x-4">
+          {cell(totalReq, windowColor(0, undefined))}
+          {cell(totalTok, windowColor(1, undefined))}
+        </div>
+      </div>
+    );
+    // Collapsed: just the aggregate Total bar. Snapshots from before the daemon
+    // emitted the aggregate windows fall back to the 30d account totals.
+    if (totalsOnly) {
+      if (totalRow) return totalRow;
+      const accountTotals = (p.windows || []).filter((w: any) => !/^daily_/.test(w.id || ''));
+      return listWindowLines({ ...p, windows: accountTotals });
+    }
+    if (!models.length && !totalRow) return listWindowLines(p);
+    if (!models.length) return totalRow;
     return (
       <div className="flex flex-col gap-2">
         <div className="grid grid-cols-2 gap-x-4 text-sm uppercase tracking-wide text-neutral-300">
@@ -436,6 +487,7 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
             Tokens
           </span>
         </div>
+        {totalRow}
         {models.map((r) => (
           <div key={r.slug} className="group/model relative">
             {/* Flyout: values live here, out of flow, so the rows stay one line each. */}
@@ -454,10 +506,12 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
     );
   };
 
-  // Voyage emits one segment per model with its free-token allocation and
-  // remaining balance. Keep the aggregate window in the card header, then show
-  // the model-level consumption as one bar per model.
-  const voyageLines = (p: any) => {
+  // Voyage: the daemon emits one aggregate free-token window plus, per model, one
+  // segment with its allocation and remaining balance. First line is the aggregate
+  // (the bare card header carries no value), then one bar per model that actually
+  // has an allocation — zero-allocation models are skipped so the shown rows sum
+  // to the aggregate cap. Values live in the hover flyout (same pattern as groqLines).
+  const voyageLines = (p: any, totalsOnly = false) => {
     const models = (p.segments || [])
       .filter((s: any) => typeof s?.total_tokens === 'number' && s.total_tokens > 0)
       .map((s: any) => {
@@ -469,25 +523,85 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
           total: s.total_tokens,
         };
       });
-    if (!models.length) return listWindowLines(p);
     const compact = (n: number) => n.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 2 });
+    const flyout = (used: number, total: number, exhausted: boolean) => (
+      <span className={exhausted ? 'text-red-400' : 'text-neutral-100'}>
+        {compact(used)} used / {compact(total)} ({compact(total - used)} left)
+      </span>
+    );
+    const agg = p.windows?.[0];
+    const aggExhausted = typeof agg?.pct === 'number' && agg.pct >= 100;
+    const aggRow = agg && typeof agg.used === 'number' && typeof agg.cap === 'number' && (
+      <div className="group/model relative">
+        <div className="pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/model:flex rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40">
+          {flyout(agg.used, agg.cap, aggExhausted)}
+        </div>
+        <div className="text-sm text-neutral-200 font-medium truncate">Total</div>
+        <ActivityBar pct={agg.pct ?? null} pct1hAgo={agg.pct_1h_ago ?? null} color={aggExhausted ? '#ef4444' : windowColor(0, undefined)} />
+      </div>
+    );
+    // Collapsed: just the aggregate total row (no per-model breakdown).
+    if (totalsOnly) return aggRow ?? listWindowLines(p);
+    if (!models.length) return listWindowLines(p);
     return (
       <div className="flex flex-col gap-2">
         <div className="text-sm uppercase tracking-wide text-neutral-300">Free tokens by model</div>
+        {aggRow}
         {models.map((model: any) => (
           <div key={model.name} className="group/model relative">
             <div className="pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/model:flex rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40">
-              <span className={model.pct >= 100 ? 'text-red-400' : 'text-neutral-100'}>
-                {compact(model.total - model.remaining)} used / {compact(model.total)} ({compact(model.remaining)} left)
-              </span>
+               {flyout(model.total - model.remaining, model.total, model.pct >= 100)}
             </div>
             <div className="text-sm text-neutral-300 truncate">{model.name}</div>
-            <ActivityBar pct={model.pct} color={model.pct >= 100 ? '#ef4444' : windowColor(0, undefined)} />
+            <ActivityBar pct={model.pct} pct1hAgo={null} color={model.pct >= 100 ? '#ef4444' : windowColor(0, undefined)} />
           </div>
         ))}
       </div>
     );
   };
+
+  // Ollama: the daemon emits one aggregate usage window plus, per model,
+  // a segment with its request count. Renders as a single-column list
+  // of models with their request counts in the hover flyout.
+  const ollamaLines = (p: any, totalsOnly = false) => {
+    const models = (p.segments || []).map((s: any) => ({
+      name: String(s.model || 'unknown'),
+      requests: s.requests,
+      // Ollama doesn't provide per-model pct/cap in segments, 
+      // so we show a simple number in the flyout.
+    }));
+    const compact = (n: number) => n.toLocaleString(undefined, { notation: 'compact', maximumFractionDigits: 2 });
+    const agg = p.windows?.[0];
+    const aggExhausted = typeof agg?.pct === 'number' && agg.pct >= 100;
+    const aggRow = agg && (
+      <div className="group/model relative">
+        <div className="pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/model:flex rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40">
+          <span className={aggExhausted ? 'text-red-400' : 'text-neutral-100'}>{valueText(agg)}</span>
+        </div>
+        <div className="text-sm text-neutral-200 font-medium truncate">Total</div>
+        <ActivityBar pct={agg.pct ?? null} pct1hAgo={agg.pct_1h_ago ?? null} color={aggExhausted ? '#ef4444' : windowColor(0, undefined)} />
+      </div>
+    );
+    if (totalsOnly) return aggRow ?? listWindowLines(p);
+    if (!models.length) return listWindowLines(p);
+    return (
+      <div className="flex flex-col gap-2">
+        <div className="text-sm uppercase tracking-wide text-neutral-300">Requests by model</div>
+        {aggRow}
+        {models.map((model: any) => (
+          <div key={model.name} className="group/model relative">
+            <div className="pointer-events-none absolute right-0 bottom-full mb-0.5 z-20 hidden group-hover/model:flex rounded-md border border-neutral-700 bg-neutral-950 px-2 py-1 text-sm tabular-nums shadow-lg shadow-black/40">
+              <span className="text-neutral-100">{compact(model.requests)} requests</span>
+            </div>
+            <div className="text-sm text-neutral-300 truncate">{model.name}</div>
+            {/* Use a neutral placeholder bar since Ollama doesn't provide per-model % */}
+            <ActivityBar pct={null} pct1hAgo={null} color={windowColor(0, undefined)} />
+          </div>
+        ))}
+      </div>
+    );
+  };
+
 
   // Grid tiles: kept deliberately small — no bars (the number is the point at this
   // density), tight line-height, sized to its own content (items-start on the grid
@@ -577,14 +691,28 @@ function GroupedCard({ title, subtitle, icon, providers, onRefresh, onSettings, 
                   className={`shrink-0 ${p.status === 'ok' && !p.stale ? 'text-emerald-400' : p.status === 'ok' ? 'text-amber-400' : p.status ? 'text-red-500' : 'text-neutral-200'}`}
                 />
                 <span className="capitalize text-base text-neutral-200 truncate">{p.provider}</span>
-                <div className="ml-auto flex flex-col items-end">
-                  <ResetBadge reset={sharedReset(p)} className="mr-1" />
-                  <CardActions provider={p.provider} onRefresh={onRefresh} onSettings={onSettings} size={13} />
+                <div className="ml-auto flex items-center gap-1">
+                    {p.provider === 'groq' || p.provider === 'voyage' || p.provider === 'ollama' ? (
+                      // Collapse toggle for the per-model cards: hides the model
+                      // rows, leaving the totals. Persisted per provider in localStorage.
+                      <button
+                        onClick={toggleCollapsed}
+                        title={collapsed ? `Expand ${p.provider} model breakdown` : `Collapse ${p.provider} model breakdown`}
+                        onDoubleClick={(e) => e.stopPropagation()}
+                        className="p-1 rounded-md text-neutral-300 hover:bg-neutral-700/50 hover:text-neutral-100 transition-colors shrink-0"
+                      >
+                        {collapsed ? <ChevronDown size={13} /> : <ChevronUp size={13} />}
+                      </button>
+                    ) : null}
+                  <div className="flex flex-col items-end">
+                    <ResetBadge reset={sharedReset(p)} className="mr-1" />
+                    <CardActions provider={p.provider} onRefresh={onRefresh} onSettings={onSettings} size={13} />
+                  </div>
                 </div>
               </div>
-              <div className="mt-1 pl-3.5">
-                {p.provider === 'groq' ? groqLines(p) : p.provider === 'voyage' ? voyageLines(p) : listWindowLines(p)}
-              </div>
+                <div className="mt-1 pl-3.5">
+                  {p.provider === 'groq' ? groqLines(p, collapsed) : p.provider === 'voyage' ? voyageLines(p, collapsed) : p.provider === 'ollama' ? ollamaLines(p, collapsed) : listWindowLines(p)}
+                </div>
             </div>
           ))}
         </div>
@@ -800,11 +928,12 @@ function OverviewBoardV3({ providers, cardGroup, onRefresh, onSettings, onOpen, 
       <div className="columns-[360px] gap-4">
         {/* Grouped providers share one grid cell per group rather than taking one each. */}
         <GroupedCard title="Support Services" subtitle="metered APIs" icon={<Wrench size={16} className="text-neutral-200" />} providers={support} onRefresh={onRefresh} onSettings={onSettings} onOpen={onOpen} layout="grid" />
-        {/* Only Support Services shares a card; every other provider gets its own
-            (Daily/Weekly/Monthly assignment now just sets order, not a shared card). */}
-        {cards.map((p) => p.provider === 'groq' ? (
-          <GroupedCard key={p.provider} bare providers={[p]} onRefresh={onRefresh} onSettings={onSettings} onOpen={onOpen} />
-        ) : (
+        {/* Only Support Services shares a card; every other provider gets its own,
+            ordered by soonest reset (see `cards` above). Groq and voyage get the
+            compact per-model card (groqLines/voyageLines) instead of the rich one. */}
+         {cards.map((p) => p.provider === 'groq' || p.provider === 'voyage' || p.provider === 'ollama' ? (
+           <GroupedCard key={p.provider} bare providers={[p]} onRefresh={onRefresh} onSettings={onSettings} onOpen={onOpen} />
+         ) : (
           <div
             key={p.provider}
             onDoubleClick={() => onOpen(p.provider)}

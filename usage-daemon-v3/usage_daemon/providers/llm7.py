@@ -1,9 +1,10 @@
 """LLM7 usage provider plugin (port of src/providers/llm7.js).
 
 Token-level daily quota from api-token.llm7.io — the dashboard SESSION JWT, not
-an API key (the classic mistake). Rolling 24h window from the first request, so
-resets_at is None; 1M token daily limit on the free tier. Single meter:
-daily_tokens used/limit with the raw remaining figure surfaced via meta().
+an API key (the classic mistake). Resets at UTC midnight (verified against the
+live API 2026-09, replacing the earlier "rolling 24h" reading); 1M token daily
+limit on the free tier. Single meter: daily_tokens used/limit with the raw
+remaining figure surfaced via meta().
 """
 
 from __future__ import annotations

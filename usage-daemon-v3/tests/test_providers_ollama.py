@@ -17,17 +17,20 @@ def test_parse_tier_from_capitalize_pill():
     assert parse(html)["tier"] == "free"
 
 
-def test_parse_usage_window_at_zero():
+def test_parse_usage_window_with_data():
     windows = parse(html)["windows"]
     usage = next(w for w in windows if w["id"] == "usage")
     assert usage["label"] == "Free usage"
-    assert usage["pct"] == 0
+    assert usage["pct"] == 9.5
     assert usage["resets_at"] == "2026-07-11T10:00:00Z"
     assert usage["color"] == "#E69F00"
 
 
-def test_parse_no_segments_at_zero_usage():
-    assert parse(html)["segments"] == []
+def test_parse_segments_in_fixture():
+    segments = parse(html)["segments"]
+    assert len(segments) == 6
+    assert segments[0] == {"model": "nemotron-3-ultra", "requests": 10}
+    assert segments[-1] == {"model": "gpt-oss:120b", "requests": 49}
 
 
 def test_parse_decimal_pct():

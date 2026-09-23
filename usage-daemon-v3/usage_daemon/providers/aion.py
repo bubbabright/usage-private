@@ -11,7 +11,7 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any
 
-from ..errors import AuthExpiredError, RateLimitedError
+from ..errors import AuthExpiredError, ProviderError, RateLimitedError
 from ..httputil import create_client
 
 TOKEN_COLOR = "#F0E442"
@@ -59,23 +59,21 @@ def parse(raw: str) -> dict:
     cap = detail("Free-tier daily limit")
     remaining = detail("Tokens remaining today")
     if used is None or cap is None or cap <= 0:
-        raise AuthExpiredError("no usable Aion Labs quota figures")
+        # Auth is fine (login-page check above passed) — this is a parse failure,
+        # not an expiry. AuthExpiredError would trigger a pointless Firefox
+        # cookie refresh and a 30-min retry floor; ProviderError backoffs normally.
+        raise ProviderError("no usable Aion Labs quota figures")
 
     segments = []
-    row_re = re.compile(
-        r"<tr[^>]*>\s*"
-        r"<td[^>]*>(.*?)</td>\s*"
-        r"<td[^>]*>(.*?)</td>\s*"
-        r"<td[^>]*>(.*?)</td>\s*"
-        r"<td[^>]*>(.*?)</td>\s*"
-        r"<td[^>]*>(.*?)</td>\s*"
-        r"<td[^>]*>(.*?)</td>\s*"
-        r"<td[^>]*>(.*?)</td>\s*"
-        r"<td[^>]*>(.*?)</td>",
-        re.I | re.S,
-    )
+    row_re = re.compile(r"<tr[^>]*>(.*?)</tr>", re.I | re.S)
+    cell_re = re.compile(r"<td[^>]*>(.*?)</td>", re.I | re.S)
     for row in row_re.finditer(raw):
-        cells = [re.sub(r"<[^>]+>", "", html.unescape(cell)).strip() for cell in row.groups()]
+        cells = [
+            re.sub(r"<[^>]+>", "", html.unescape(cell)).strip()
+            for cell in cell_re.findall(row.group(1))
+        ]
+        # Exactly 8: a wider row (e.g. a new column) must be skipped whole —
+        # matching a fixed 8 anywhere inside it would silently mis-slot cells.
         if len(cells) != 8:
             continue
         input_tokens = _number(cells[3])

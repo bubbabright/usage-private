@@ -230,9 +230,50 @@ def _aggregate_activity_data(entries: list[dict]) -> dict:
 
 
 def _daily_limit_windows(model_stats: dict, model_limits: dict, token_limits: dict | None = None) -> list[dict]:
-    """Build daily request- and token-limit windows for models with known limits."""
+    """Build the all-models daily aggregate windows plus per-model windows.
+
+    The aggregate mirrors Voyage's free-token total: used = Σ consumed across
+    every model with a known limit (including zero-usage models the per-model
+    rows skip), cap = Σ those limits. Emitted even at zero usage so the Total
+    row exists on a quiet day.
+    """
     token_limits = token_limits or {}
     windows = []
+
+    req_limited = [(model, model_limits[model]) for model in model_stats if model_limits.get(model)]
+    if req_limited:
+        used = sum(int(model_stats[model].get("requests_today", 0)) for model, _ in req_limited)
+        cap = sum(limit for _, limit in req_limited)
+        windows.append({
+            "id": "daily_total",
+            "label": "All models daily",
+            "letter": "D",
+            "pct": max(0.0, min(100.0, 100.0 * used / cap)),
+            "used": used,
+            "cap": cap,
+            "unit": "calls",
+            "resets_at": _start_of_next_day(),
+            "color": DAILY_LIMIT_COLOR,
+            "will_deplete": False,
+        })
+
+    tok_limited = [(model, token_limits[model]) for model in model_stats if token_limits.get(model)]
+    if tok_limited:
+        used = sum(int(model_stats[model].get("tokens_today", 0)) for model, _ in tok_limited)
+        cap = sum(limit for _, limit in tok_limited)
+        windows.append({
+            "id": "daily_tokens_total",
+            "label": "All models daily tokens",
+            "letter": "T",
+            "pct": max(0.0, min(100.0, 100.0 * used / cap)),
+            "used": used,
+            "cap": cap,
+            "unit": "tokens",
+            "resets_at": _start_of_next_day(),
+            "color": DAILY_TOKEN_LIMIT_COLOR,
+            "will_deplete": False,
+        })
+
     for model, stats in model_stats.items():
         limit = model_limits.get(model)
         if limit:

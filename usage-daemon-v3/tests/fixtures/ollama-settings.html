@@ -39,9 +39,6 @@
           <div class="w-full">
             <div class="flex min-w-0 max-w-full flex-col space-y-6">
 
-              <!-- 2026-09 redesign: "Included usage" replaces the old "Cloud
-                   usage" heading; a single "<tier> usage" meter replaces the
-                   old separate "Session usage"/"Weekly usage" meters. -->
               <h2 class="text-xl font-medium flex items-center space-x-2">
                 <span>Included usage</span>
                 <span
@@ -70,15 +67,81 @@
               <div>
                 <div class="flex justify-between mb-2">
                   <span class="text-sm">Free usage</span>
-                  <span class="text-sm">0% used</span>
+                  <span class="text-sm">9.5% used</span>
                 </div>
                 <div class="relative group" data-usage-meter>
                   <div
+                    class="absolute bottom-6 left-[var(--usage-bubble-x,50%)] z-10 inline-flex max-w-[min(260px,100%)] -translate-x-1/2 flex-col items-start gap-0.5 rounded-xl border border-neutral-300 bg-white/95 px-2.5 pt-[7px] pb-2 text-neutral-900 opacity-0 pointer-events-none whitespace-nowrap backdrop-blur-md group-[.usage-meter--active]:opacity-100"
+                    data-usage-bubble
+                    aria-hidden="true"
+                  >
+                    <span class="max-w-[190px] overflow-hidden text-ellipsis text-xs font-medium leading-[1.2]" data-usage-model></span>
+                    <span class="text-[11px] leading-[1.2] text-neutral-500" data-usage-requests></span>
+                  </div>
+                  <div
                     class="relative h-3 overflow-hidden rounded-full bg-neutral-200"
                     data-usage-track
-                    aria-label="Free usage 0% used"
+                    aria-label="Free usage 9.5% used"
                   >
-                    <div class="flex h-full overflow-hidden bg-neutral-950" style="width: 0%;"></div>
+                    <div
+                      class="flex h-full overflow-hidden bg-neutral-950"
+                      style="width: 9.5%; "
+                    >
+                      <button
+                        type="button"
+                        class="relative h-full min-w-[2px] flex-none overflow-hidden border-r border-white p-0 last:border-r-0 focus-visible:outline-none"
+                        style="width: 1.8%; background: #76b900"
+                        data-usage-segment
+                        data-model="nemotron-3-ultra"
+                        data-requests="10"
+                        aria-label="nemotron-3-ultra: 10 requests"
+                      ></button>
+                      <button
+                        type="button"
+                        class="relative h-full min-w-[2px] flex-none overflow-hidden border-r border-white p-0 last:border-r-0 focus-visible:outline-none"
+                        style="width: 0.7%; background: #76b900"
+                        data-usage-segment
+                        data-model="nemotron-3-nano:30b"
+                        data-requests="42"
+                        aria-label="nemotron-3-nano:30b: 42 requests"
+                      ></button>
+                      <button
+                        type="button"
+                        class="relative h-full min-w-[2px] flex-none overflow-hidden border-r border-white p-0 last:border-r-0 focus-visible:outline-none"
+                        style="width: 0.5%; background: #76b900"
+                        data-usage-segment
+                        data-model="nemotron-3-super"
+                        data-requests="11"
+                        aria-label="nemotron-3-super: 11 requests"
+                      ></button>
+                      <button
+                        type="button"
+                        class="relative h-full min-w-[2px] flex-none overflow-hidden border-r border-white p-0 last:border-r-0 focus-visible:outline-none"
+                        style="width: 53.7%; background: #22c55e"
+                        data-usage-segment
+                        data-model="gemma4:31b"
+                        data-requests="54"
+                        aria-label="gemma4:31b: 54 requests"
+                      ></button>
+                      <button
+                        type="button"
+                        class="relative h-full min-w-[2px] flex-none overflow-hidden border-r border-white p-0 last:border-r-0 focus-visible:outline-none"
+                        style="width: 35.5%; background: #525252"
+                        data-usage-segment
+                        data-model="gpt-oss:20b"
+                        data-requests="649"
+                        aria-label="gpt-oss:20b: 649 requests"
+                      ></button>
+                      <button
+                        type="button"
+                        class="relative h-full min-w-[2px] flex-none overflow-hidden border-r border-white p-0 last:border-r-0 focus-visible:outline-none"
+                        style="width: 7.8%; background: #525252"
+                        data-usage-segment
+                        data-model="gpt-oss:120b"
+                        data-requests="49"
+                        aria-label="gpt-oss:120b: 49 requests"
+                      ></button>
+                    </div>
                   </div>
                 </div>
                 <div class="text-xs text-neutral-500 mt-1 local-time" data-time="2026-07-11T10:00:00Z">

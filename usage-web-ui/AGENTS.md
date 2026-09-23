@@ -71,8 +71,13 @@ the version number in `ExecStart` must be bumped when the active version moves.
   "buckets" only order the cards); `cardGroups` in localStorage still feeds `resolveGroup`.
 - **Numbers hidden on non-Support cards**: values show in a hover flyout (absolutely
   positioned, no layout space). Exceptions: Support tiles, and windows with no bar.
-  Groq is special-cased (`groqLines` in `GroupedCard`): the four 30d totals are dropped
-  and each model is one line — requests bar left, tokens bar right.
+  Groq and Voyage are special-cased (`groqLines`/`voyageLines` in `GroupedCard`):
+  groq's four 30d totals are dropped, its daemon-side all-models aggregate
+  (`daily_total`/`daily_tokens_total`) is drawn as a Total row, and each model is
+  one line — requests bar left, tokens bar right. Voyage draws its aggregate as a
+  Total row plus one free-token bar per model (`p.segments`). Both cards carry a
+  collapse chevron (persisted in localStorage `cardCollapse`) that hides the model
+  rows and keeps only the totals.
 - **Reset countdown** is drawn by `ResetBadge` only: once in the card header (above the
   refresh/settings buttons) when all windows share the same countdown (`sharedReset`),
   else per-row at the row's right end. Never shown on Support tiles.

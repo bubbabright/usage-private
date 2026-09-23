@@ -175,7 +175,13 @@ def test_aggregate_activity_data_uses_month_window():
 def test_daily_limit_windows_builds_for_known_models():
     agg = _aggregate_activity_data(SAMPLE_ACTIVITY["data"])
     windows = _daily_limit_windows(agg["model_stats"], GROQ_FREE_TIER_MODEL_LIMITS)
-    assert len(windows) == 2  # gpt-oss-20b and llama-3.1-8b-instant both have known caps
+    # gpt-oss-20b + llama-3.1-8b-instant per-model rows, plus the all-models aggregate
+    assert len(windows) == 3
+    total = next(w for w in windows if w["id"] == "daily_total")
+    assert total["used"] == 67  # 65 + 2
+    assert total["cap"] == 15400  # 1000 + 14400
+    assert total["pct"] == pytest.approx(100 * 67 / 15400)
+    assert total["unit"] == "calls"
     llama = next(w for w in windows if "llama" in w["id"])
     assert llama["used"] == 2
     assert llama["cap"] == 14400
@@ -195,3 +201,21 @@ def test_daily_token_limit_windows_build_for_known_models():
     gpt_oss = next(w for w in windows if w["id"] == "daily_tokens_openai_gpt_oss_20b")
     assert gpt_oss["used"] == 4745  # 4680 non-cached + 65 generated
     assert gpt_oss["cap"] == 200000
+    total = next(w for w in windows if w["id"] == "daily_tokens_total")
+    assert total["used"] == 4891  # 146 + 4745
+    assert total["cap"] == 700000  # 500000 + 200000
+    # The requests aggregate is still present alongside the token aggregate
+    assert next(w for w in windows if w["id"] == "daily_total")["used"] == 67
+
+
+def test_daily_limit_windows_aggregate_includes_zero_usage_models():
+    # A model with a known cap but no usage today still contributes its full
+    # allocation to the aggregate cap, even though it gets no per-model row.
+    stats = {"used-model": {"requests_today": 10, "tokens_today": 100}, "idle-model": {"requests_today": 0}}
+    windows = _daily_limit_windows(stats, {"used-model": 100, "idle-model": 50}, {"used-model": 1000})
+    total = next(w for w in windows if w["id"] == "daily_total")
+    assert total["used"] == 10
+    assert total["cap"] == 150  # 100 + 50: idle-model's untouched allocation counts
+    tok_total = next(w for w in windows if w["id"] == "daily_tokens_total")
+    assert tok_total["cap"] == 1000
+    assert tok_total["used"] == 100

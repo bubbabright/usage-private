@@ -13,7 +13,7 @@ import os
 import re
 from typing import Any
 
-from ..errors import AuthExpiredError, RateLimitedError
+from ..errors import AuthExpiredError, ProviderError, RateLimitedError
 from ..httputil import create_client
 
 ID = "voyage"
@@ -79,7 +79,10 @@ def parse(data: Any) -> dict:
     if used is None and cap is not None and remaining is not None:
         used = cap - remaining
     if used is None or cap is None or cap <= 0:
-        raise AuthExpiredError("no usable Voyage AI free-token quota")
+        # Auth is fine at this point (no 401/403 happened) — a quota shape we
+        # can't parse is a parse failure, not an expiry. AuthExpiredError would
+        # trigger a pointless Firefox cookie refresh and a 30-min retry floor.
+        raise ProviderError("no usable Voyage AI free-token quota")
     return {
         "tier": "free",
         "windows": [{
@@ -135,61 +138,83 @@ def create() -> dict:
     async def set_auth(value: str) -> None:
         state["token"] = value.strip() or None
 
+    async def _harvest_token(client) -> str:
+        """Harvest a fresh dashboard bearer token via the browser cookie."""
+        action = await client.post(
+            "https://dashboard.voyageai.com/organization/usage?tab=free-token",
+            headers={
+                "Cookie": state["cookie"],
+                "Next-Action": "00d99f2710a2253c76f06855ef641ff10d0c48a8ba",
+                "Content-Type": "text/plain;charset=UTF-8",
+                "Accept": "text/x-component",
+                "Origin": "https://dashboard.voyageai.com",
+                "Referer": USAGE_URL,
+                "User-Agent": "Mozilla/5.0",
+            },
+            content="[]",
+        )
+        if action.status_code in (401, 403):
+            raise AuthExpiredError("Voyage AI dashboard session expired")
+        action.raise_for_status()
+        match = re.search(r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_.-]{20,}", action.text)
+        if not match:
+            raise AuthExpiredError("Voyage AI dashboard did not return an access token")
+        state["token"] = match.group(0)
+        return state["token"]
+
+    class _StaleToken(Exception):
+        """Backend rejected the cached bearer token (401/403)."""
+
+    async def _free_token_payload(client) -> dict:
+        token = state["token"]
+        if not token and state["cookie"]:
+            token = await _harvest_token(client)
+        if not token:
+            raise AuthExpiredError("no Voyage AI dashboard session configured")
+        auth_headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
+        orgs = await client.get(
+            f"{BACKEND_URL}/api/org/list",
+            headers=auth_headers,
+        )
+        if orgs.status_code in (401, 403):
+            raise _StaleToken
+        if orgs.status_code == 429:
+            raise RateLimitedError()
+        orgs.raise_for_status()
+        payload = orgs.json()
+        items = payload.get("data", payload) if isinstance(payload, dict) else payload
+        if not isinstance(items, list) or not items:
+            raise RuntimeError("Voyage AI returned no organizations")
+        first = items[0] if isinstance(items[0], dict) else {}
+        org_id = first.get("id") or first.get("org_id")
+        if not org_id:
+            raise RuntimeError("Voyage AI organization response has no id")
+        res = await client.get(
+            f"{BACKEND_URL}/api/org/get_free_token/{org_id}",
+            headers=auth_headers,
+        )
+        if res.status_code in (401, 403):
+            raise _StaleToken
+        if res.status_code == 429:
+            raise RateLimitedError()
+        res.raise_for_status()
+        return res.json()
+
     async def fetch() -> dict:
         client = create_client()
         try:
-            token = state["token"]
-            if not token and state["cookie"]:
-                action = await client.post(
-                    "https://dashboard.voyageai.com/organization/usage?tab=free-token",
-                    headers={
-                        "Cookie": state["cookie"],
-                        "Next-Action": "00d99f2710a2253c76f06855ef641ff10d0c48a8ba",
-                        "Content-Type": "text/plain;charset=UTF-8",
-                        "Accept": "text/x-component",
-                        "Origin": "https://dashboard.voyageai.com",
-                        "Referer": USAGE_URL,
-                        "User-Agent": "Mozilla/5.0",
-                    },
-                    content="[]",
-                )
-                if action.status_code in (401, 403):
-                    raise AuthExpiredError("Voyage AI dashboard session expired")
-                action.raise_for_status()
-                match = re.search(r"eyJ[A-Za-z0-9_-]{20,}\.[A-Za-z0-9_.-]{20,}", action.text)
-                if not match:
-                    raise AuthExpiredError("Voyage AI dashboard did not return an access token")
-                token = match.group(0)
-                state["token"] = token
-            if not token:
-                raise AuthExpiredError("no Voyage AI dashboard session configured")
-            auth_headers = {"Authorization": f"Bearer {token}", "Accept": "application/json"}
-            orgs = await client.get(
-                f"{BACKEND_URL}/api/org/list",
-                headers=auth_headers,
-            )
-            if orgs.status_code in (401, 403):
-                raise AuthExpiredError("Voyage AI access token expired")
-            if orgs.status_code == 429:
-                raise RateLimitedError()
-            orgs.raise_for_status()
-            payload = orgs.json()
-            items = payload.get("data", payload) if isinstance(payload, dict) else payload
-            if not isinstance(items, list) or not items:
-                raise RuntimeError("Voyage AI returned no organizations")
-            org_id = items[0].get("id") or items[0].get("org_id") if isinstance(items[0], dict) else None
-            if not org_id:
-                raise RuntimeError("Voyage AI organization response has no id")
-            res = await client.get(
-                f"{BACKEND_URL}/api/org/get_free_token/{org_id}",
-                headers=auth_headers,
-            )
-            if res.status_code in (401, 403):
-                raise AuthExpiredError("Voyage AI access token expired")
-            if res.status_code == 429:
-                raise RateLimitedError()
-            res.raise_for_status()
-            return res.json()
+            # A harvested JWT eventually expires; without this retry the stale
+            # cached token would be reused forever and the provider would sit in
+            # auth_expired until a daemon restart. On 401: drop the token, then
+            # re-harvest a fresh one from the (cookie-refreshed) session once.
+            for attempt in (0, 1):
+                try:
+                    return await _free_token_payload(client)
+                except _StaleToken:
+                    state["token"] = None
+                    if attempt:
+                        raise AuthExpiredError("Voyage AI access token expired")
+            raise AssertionError("unreachable")
         finally:
             await client.aclose()
 

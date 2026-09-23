@@ -40,7 +40,13 @@ _RE_SEGMENT = re.compile(
 
 
 def parse(html: str) -> dict:
-    """Pure function of the settings page HTML -> {tier, windows, segments}."""
+    """Pure function of the settings page HTML -> {tier, windows, segments}.
+    
+    Scrapes:
+    - Account tier (Free/Pro)
+    - Total usage percentage and reset date
+    - Per-model request counts from data-usage-segment attributes
+    """
     if not re.search(r"Included usage|Cloud usage", html):
         raise AuthExpiredError("ollama.com session expired")
 
